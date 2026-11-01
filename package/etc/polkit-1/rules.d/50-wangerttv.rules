@@ -1,0 +1,36 @@
+// WangertTV: Der TV-Benutzer darf genau die Aktionen ausführen, die die Oberfläche braucht – ohne Passwortabfrage.
+polkit.addRule(function (action, subject) {
+    // greetd darf sich nach dem Ende der TV-Sitzung selbst neu starten (-> erneute automatische Anmeldung)
+    if (subject.user === "_greetd" && action.id === "org.freedesktop.systemd1.manage-units" &&
+        action.lookup("unit") === "greetd.service" && action.lookup("verb") === "restart") {
+        return polkit.Result.YES;
+    }
+    if (subject.user !== "tv") {
+        return polkit.Result.NOT_HANDLED;
+    }
+    if (action.id === "org.freedesktop.systemd1.manage-units") {
+        var unit = action.lookup("unit");
+        var verb = action.lookup("verb");
+        var units = ["wtv-update.service", "wtv-update-check.service", "wtv-install.service", "wtv-reset.service",
+                     "wtv-android@init.service", "wtv-android@id.service", "waydroid-container.service",
+                     "wtv-remote.service", "bluetooth.service"];
+        if (units.indexOf(unit) >= 0 && (verb === "start" || verb === "restart" || verb === "stop")) {
+            return polkit.Result.YES;
+        }
+    }
+    var allowed = [
+        "org.freedesktop.timedate1.set-timezone", "org.freedesktop.timedate1.set-ntp",
+        "org.freedesktop.hostname1.set-static-hostname", "org.freedesktop.hostname1.set-hostname",
+        "org.freedesktop.hostname1.set-machine-info", "org.freedesktop.locale1.set-locale",
+        "org.freedesktop.locale1.set-keyboard",
+        "org.freedesktop.login1.reboot", "org.freedesktop.login1.power-off", "org.freedesktop.login1.suspend",
+        "org.freedesktop.login1.reboot-multiple-sessions", "org.freedesktop.login1.power-off-multiple-sessions",
+        "org.freedesktop.NetworkManager.settings.modify.system", "org.freedesktop.NetworkManager.settings.modify.own",
+        "org.freedesktop.NetworkManager.network-control", "org.freedesktop.NetworkManager.wifi.scan",
+        "org.freedesktop.NetworkManager.enable-disable-wifi", "org.freedesktop.NetworkManager.enable-disable-network"
+    ];
+    if (allowed.indexOf(action.id) >= 0) {
+        return polkit.Result.YES;
+    }
+    return polkit.Result.NOT_HANDLED;
+});

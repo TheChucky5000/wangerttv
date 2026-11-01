@@ -1,0 +1,9 @@
+[Unit]
+Description=WangertTV Android-Bereich (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-android %i
+TimeoutStartSec=2h

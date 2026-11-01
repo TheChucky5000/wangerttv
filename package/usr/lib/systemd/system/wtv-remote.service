@@ -1,0 +1,15 @@
+[Unit]
+Description=WangertTV Fernbedienung & HDMI-CEC
+After=systemd-udevd.service bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/wangerttv/bin/wtv-remote
+Restart=always
+RestartSec=3
+RuntimeDirectory=wangerttv
+RuntimeDirectoryPreserve=yes
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target

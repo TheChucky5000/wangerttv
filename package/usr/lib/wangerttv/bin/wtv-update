@@ -1,0 +1,278 @@
+#!/usr/bin/python3
+"""wtv-update – der WangertTV-Updater (läuft als root über systemd).
+
+  wtv-update --check   nur prüfen, was es Neues gibt
+  wtv-update --all     alles aktualisieren: System & Programme (Kodi, Chrome, librespot, UxPlay, …),
+                       Flatpak-Apps (Spotify, Plex, …), Android (Waydroid) und WangertTV selbst
+  wtv-update --auto    wie --all, aber nur wenn "Automatische Updates" eingeschaltet ist
+"""
+import fcntl
+import json
+import os
+import pwd
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+
+STATE = "/var/lib/wangerttv/update"
+STATUS = os.path.join(STATE, "status.json")
+LOG = "/var/log/wangerttv-update.log"
+LOCK = "/run/wangerttv-update.lock"
+UPDATE_CONF = "/etc/wangerttv/update.conf"   # optional: WTV_REPO=benutzer/wangerttv (GitHub-Releases)
+ENV = dict(os.environ, DEBIAN_FRONTEND="noninteractive", LC_ALL="C.UTF-8", LANG="C.UTF-8")
+APT_OPTS = ["-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"]
+
+
+def load(path, default):
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return default
+
+
+status = load(STATUS, {})
+
+
+def save(**fields):
+    status.update(fields)
+    os.makedirs(STATE, exist_ok=True)
+    tmp = STATUS + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(status, fh, ensure_ascii=False, indent=1)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, STATUS)
+
+
+def logline(text):
+    with open(LOG, "a", encoding="utf-8") as fh:
+        fh.write(f"{time.strftime('%F %T')} {text}\n")
+
+
+def run(cmd, timeout=3600, env=ENV):
+    logline("$ " + " ".join(cmd))
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logline(f"  Fehler: {exc}")
+        return 1, ""
+    if proc.stdout:
+        logline(proc.stdout[-4000:])
+    if proc.returncode:
+        logline(f"  Code {proc.returncode}: {proc.stderr[-2000:]}")
+    return proc.returncode, proc.stdout
+
+
+def tv_user():
+    try:
+        return pwd.getpwnam("tv")
+    except KeyError:
+        return None
+
+
+def as_tv(cmd):
+    user = tv_user()
+    if not user:
+        return None
+    env = dict(ENV, HOME=user.pw_dir, XDG_RUNTIME_DIR=f"/run/user/{user.pw_uid}")
+    return ["runuser", "-u", "tv", "--", *cmd], env
+
+
+def settings():
+    user = tv_user()
+    return load(os.path.join(user.pw_dir, ".config/wangerttv/settings.json"), {}) if user else {}
+
+
+def installed_version():
+    try:
+        with open("/usr/lib/wangerttv/VERSION", encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError:
+        return "0"
+
+
+def self_update_info():
+    """Neueste WangertTV-Version aus GitHub-Releases (falls in update.conf eingerichtet)."""
+    repo = ""
+    try:
+        with open(UPDATE_CONF, encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip().startswith("WTV_REPO="):
+                    repo = line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        return None
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
+        return None
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/latest",
+                                     headers={"Accept": "application/vnd.github+json", "User-Agent": "wangerttv-updater"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            rel = json.load(resp)
+    except (OSError, ValueError) as exc:
+        logline(f"GitHub nicht erreichbar: {exc}")
+        return None
+    version = rel.get("tag_name", "").lstrip("v")
+    deb = next((a for a in rel.get("assets", []) if a["name"].endswith("_all.deb")), None)
+    sha = next((a for a in rel.get("assets", []) if a["name"].endswith(".deb.sha256")), None)
+    if not version or not deb:
+        return None
+    newer = subprocess.run(["dpkg", "--compare-versions", version, "gt", installed_version()], check=False).returncode == 0
+    return {"version": version, "deb": deb["browser_download_url"], "sha": sha["browser_download_url"] if sha else None,
+            "newer": newer}
+
+
+# ---------------------------------------------------------------------- Prüfen
+def check():
+    save(state="checking", progress=3, message="Paketquellen werden geprüft …")
+    run(["apt-get", "update", "-q"], timeout=900)
+    _, out = run(["apt", "list", "--upgradable"], timeout=120)
+    apt_pkgs = [line.split("/")[0] for line in out.splitlines() if "/" in line and "upgradable" in line]
+    flat = []
+    if os.path.exists("/usr/bin/flatpak"):
+        _, out = run(["flatpak", "remote-ls", "--updates", "--system", "--columns=application"], timeout=300)
+        flat += [x.strip() for x in out.splitlines() if x.strip()]
+        cmd = as_tv(["flatpak", "remote-ls", "--updates", "--user", "--columns=application"])
+        if cmd:
+            _, out = run(cmd[0], timeout=300, env=cmd[1])
+            flat += [x.strip() for x in out.splitlines() if x.strip()]
+    info = self_update_info()
+    available = {"apt": len(apt_pkgs), "flatpak": len(set(flat)), "android": 0, "wangerttv": 1 if info and info["newer"] else 0}
+    important = [p for p in apt_pkgs if re.match(r"(kodi|google-chrome|linux-image|waydroid|raspotify|uxplay|wangerttv)", p)]
+    packages = important + [p for p in apt_pkgs if p not in important] + sorted(set(flat))
+    save(state="idle", progress=0, message="", last_check=time.time(), available=available,
+         packages=packages[:200], total=sum(available.values()))
+    return available
+
+
+# ---------------------------------------------------------------------- Aktualisieren
+def apt_upgrade(lo, hi):
+    """apt-get full-upgrade mit Fortschritt (APT::Status-Fd)."""
+    read_fd, write_fd = os.pipe()
+    cmd = ["apt-get", *APT_OPTS, "-o", f"APT::Status-Fd={write_fd}", "full-upgrade"]
+    logline("$ " + " ".join(cmd))
+    with open(LOG, "a", encoding="utf-8") as logfh:
+        proc = subprocess.Popen(cmd, stdout=logfh, stderr=subprocess.STDOUT, env=ENV, pass_fds=(write_fd,))
+    os.close(write_fd)
+    with os.fdopen(read_fd, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            parts = line.strip().split(":", 3)
+            if len(parts) < 4:
+                continue
+            kind, pkg, pct, desc = parts
+            try:
+                pct = float(pct)
+            except ValueError:
+                continue
+            if kind == "dlstatus":
+                save(state="running", progress=int(lo + (hi - lo) * 0.4 * pct / 100), message=f"Lade herunter … {int(pct)} %")
+            elif kind == "pmstatus":
+                save(state="running", progress=int(lo + (hi - lo) * (0.4 + 0.6 * pct / 100)), message=f"{pkg}: {desc}")
+    return proc.wait()
+
+
+def update_all():
+    check()
+    errors = []
+    save(state="running", progress=8, message="System-Pakete werden aktualisiert …")
+    run(["dpkg", "--configure", "-a"], timeout=1800)
+    if apt_upgrade(8, 60) != 0:
+        errors.append("System-Pakete")
+    run(["apt-get", *APT_OPTS, "autoremove", "--purge"], timeout=1800)
+    run(["apt-get", "clean"], timeout=300)
+
+    if os.path.exists("/usr/bin/flatpak"):
+        save(state="running", progress=62, message="Apps (Flatpak) werden aktualisiert …")
+        if run(["flatpak", "update", "--system", "-y", "--noninteractive"], timeout=3600)[0] != 0:
+            errors.append("Flatpak (System)")
+        cmd = as_tv(["flatpak", "update", "--user", "-y", "--noninteractive"])
+        if cmd and run(cmd[0], timeout=3600, env=cmd[1])[0] != 0:
+            errors.append("Flatpak (Apps)")
+        run(["flatpak", "uninstall", "--system", "--unused", "-y", "--noninteractive"], timeout=900)
+
+    if os.path.exists("/usr/bin/waydroid") and os.path.isdir("/var/lib/waydroid/images"):
+        save(state="running", progress=80, message="Android wird aktualisiert …")
+        if run(["waydroid", "upgrade"], timeout=3600)[0] != 0:
+            errors.append("Android")
+
+    info = self_update_info()
+    if info and info["newer"]:
+        save(state="running", progress=90, message=f"WangertTV {info['version']} wird installiert …")
+        if not install_self(info):
+            errors.append("WangertTV")
+
+    reboot = os.path.exists("/run/reboot-required") or kernel_changed()
+    msg = ("Teilweise fehlgeschlagen: " + ", ".join(errors)) if errors else ""
+    save(state="error" if errors else "done", progress=100, message=msg, last_update=time.time(), reboot_required=reboot)
+    check_after = check_quiet()
+    status.update(check_after)
+    save(state="error" if errors else "done", message=msg)
+
+
+def check_quiet():
+    _, out = run(["apt", "list", "--upgradable"], timeout=120)
+    pkgs = [line.split("/")[0] for line in out.splitlines() if "/" in line and "upgradable" in line]
+    return {"available": {"apt": len(pkgs), "flatpak": 0, "android": 0, "wangerttv": 0}, "packages": pkgs, "total": len(pkgs)}
+
+
+def install_self(info):
+    import hashlib
+    target = "/var/cache/wangerttv-update.deb"
+    try:
+        urllib.request.urlretrieve(info["deb"], target)   # noqa: S310 – feste https-Adresse von GitHub
+        if info["sha"]:
+            with urllib.request.urlopen(info["sha"], timeout=20) as resp:
+                expected = resp.read().decode().split()[0].lower()
+            with open(target, "rb") as fh:
+                actual = hashlib.sha256(fh.read()).hexdigest()
+            if actual != expected:
+                logline("Prüfsumme stimmt nicht – Update verworfen")
+                return False
+    except OSError as exc:
+        logline(f"Download fehlgeschlagen: {exc}")
+        return False
+    ok = run(["apt-get", *APT_OPTS, "install", target], timeout=1800)[0] == 0
+    os.unlink(target)
+    return ok
+
+
+def kernel_changed():
+    running = os.uname().release
+    return not os.path.exists(f"/lib/modules/{running}") or \
+        any(n.startswith("vmlinuz-") and n != f"vmlinuz-{running}" and
+            os.path.getmtime(f"/boot/{n}") > time.time() - 3 * 3600 for n in os.listdir("/boot"))
+
+
+def main():
+    mode = sys.argv[1] if len(sys.argv) > 1 else "--check"
+    os.makedirs(STATE, exist_ok=True)
+    lock = open(LOCK, "w")  # noqa: SIM115 – bleibt bis Prozessende offen
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("Ein Update läuft bereits.")
+        return 0
+    if os.path.isdir("/run/live/medium"):
+        save(state="error", progress=0, message="Updates sind erst nach der Installation auf die SSD möglich.")
+        return 1
+    try:
+        if mode == "--check":
+            check()
+        elif mode == "--all":
+            update_all()
+        elif mode == "--auto":
+            if (settings().get("autoupdate") or {}).get("enabled", True):
+                update_all()
+        else:
+            print(__doc__)
+            return 2
+    except Exception as exc:  # noqa: BLE001
+        logline(f"Abbruch: {exc!r}")
+        save(state="error", progress=0, message=str(exc)[:300])
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

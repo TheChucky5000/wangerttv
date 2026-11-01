@@ -1,0 +1,4 @@
+/etc/wangerttv/update.conf
+/etc/polkit-1/rules.d/50-wangerttv.rules
+/etc/systemd/logind.conf.d/wangerttv.conf
+/etc/default/grub.d/wangerttv.cfg

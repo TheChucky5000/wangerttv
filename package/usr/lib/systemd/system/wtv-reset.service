@@ -1,0 +1,6 @@
+[Unit]
+Description=WangertTV auf Werkseinstellungen zurücksetzen
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-reset

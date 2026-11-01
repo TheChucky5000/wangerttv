@@ -1,0 +1,15 @@
+#!/usr/bin/python3
+"""Wird von librespot (Spotify Connect) bei jedem Wiedergabe-Ereignis aufgerufen und meldet es an WangertTV."""
+import json
+import os
+import urllib.request
+
+KEYS = ("PLAYER_EVENT", "TRACK_ID", "NAME", "ARTISTS", "ALBUM", "COVERS", "DURATION_MS", "POSITION_MS")
+data = {k: os.environ[k] for k in KEYS if k in os.environ}
+port = os.environ.get("WTV_PORT", "8765")
+req = urllib.request.Request(f"http://127.0.0.1:{port}/api/librespot", data=json.dumps(data).encode(),
+                             headers={"Content-Type": "application/json", "X-WTV": "1"}, method="POST")
+try:
+    urllib.request.urlopen(req, timeout=3).read()
+except OSError:
+    pass

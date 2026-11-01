@@ -1,0 +1,7 @@
+[Unit]
+Description=WangertTV auf internen Datenträger installieren
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-install
+TimeoutStartSec=2h

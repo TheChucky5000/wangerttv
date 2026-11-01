@@ -1,0 +1,78 @@
+# WangertTV – Plymouth-Bootanimation
+# Gleicher Aufbau wie die Startanimation der Oberfläche, damit der Übergang nahtlos ist.
+
+Window.SetBackgroundTopColor(0.016, 0.035, 0.075);
+Window.SetBackgroundBottomColor(0.016, 0.031, 0.059);
+
+f = Window.GetHeight() / 1080;
+if (f <= 0) f = 1;
+cx = Window.GetX() + Window.GetWidth() / 2;
+cy = Window.GetY() + Window.GetHeight() / 2 - 52 * f;
+
+glow_img = Image("glow.png").Scale(520 * f, 520 * f);
+ring_img = Image("ring.png").Scale(200 * f, 200 * f);
+mark_img = Image("mark.png").Scale(118 * f, 118 * f);
+word_src = Image("word.png");
+word_img = word_src.Scale(298 * f, 298 * f * word_src.GetHeight() / word_src.GetWidth());
+
+glow = Sprite(glow_img);
+glow.SetPosition(cx - glow_img.GetWidth() / 2, cy - glow_img.GetHeight() / 2, 1);
+ring = Sprite(ring_img);
+ring.SetPosition(cx - ring_img.GetWidth() / 2, cy - ring_img.GetHeight() / 2, 2);
+mark = Sprite(mark_img);
+mark.SetPosition(cx - mark_img.GetWidth() / 2, cy - mark_img.GetHeight() / 2, 3);
+word = Sprite(word_img);
+word.SetPosition(cx - word_img.GetWidth() / 2, cy + 134 * f, 3);
+
+frame = 0;
+glow.SetOpacity(0);
+ring.SetOpacity(0);
+mark.SetOpacity(0);
+word.SetOpacity(0);
+
+fun refresh_callback ()
+{
+    global.frame++;
+    fade = global.frame / 40;
+    if (fade > 1) fade = 1;
+    wfade = (global.frame - 8) / 40;
+    if (wfade < 0) wfade = 0;
+    if (wfade > 1) wfade = 1;
+
+    angle = global.frame * 2 * Math.Pi / 70;
+    rotated = ring_img.Rotate(angle);
+    ring.SetImage(rotated);
+    ring.SetPosition(cx - rotated.GetWidth() / 2, cy - rotated.GetHeight() / 2, 2);
+
+    pulse = 0.75 + 0.25 * Math.Sin(global.frame * 2 * Math.Pi / 120);
+    glow.SetOpacity(fade * pulse);
+    ring.SetOpacity(fade);
+    mark.SetOpacity(fade);
+    word.SetOpacity(wfade);
+}
+Plymouth.SetRefreshFunction(refresh_callback);
+
+# Meldungen (z. B. Dateisystemprüfung) dezent unten anzeigen
+message_sprite = Sprite();
+message_sprite.SetPosition(Window.GetX() + 40 * f, Window.GetY() + Window.GetHeight() - 80 * f, 10);
+fun message_callback (text)
+{
+    message_sprite.SetImage(Image.Text(text, 0.55, 0.64, 0.75));
+}
+Plymouth.SetMessageFunction(message_callback);
+
+# Passwortabfrage (nur falls jemals Verschlüsselung genutzt wird)
+prompt_sprite = Sprite();
+prompt_sprite.SetPosition(cx - 200 * f, cy + 230 * f, 10);
+fun display_password_callback (prompt, bullets)
+{
+    text = prompt + "  ";
+    for (i = 0; i < bullets; i++) text = text + "*";
+    prompt_sprite.SetImage(Image.Text(text, 0.93, 0.96, 1));
+}
+Plymouth.SetDisplayPasswordFunction(display_password_callback);
+fun display_normal_callback ()
+{
+    prompt_sprite.SetImage(Image.Text("", 1, 1, 1));
+}
+Plymouth.SetDisplayNormalFunction(display_normal_callback);

@@ -1,0 +1,24 @@
+#!/bin/sh
+# WangertTV – eigenes Paket installieren, Bootanimation setzen, aufräumen
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get install -y /root/wangerttv_*_all.deb
+rm -f /root/wangerttv_*_all.deb
+
+plymouth-set-default-theme wangerttv
+update-initramfs -u -k all
+
+# Systemweite Kennung
+echo "wangerttv-box" > /etc/hostname
+printf 'PRETTY_HOSTNAME="WangertTV Box"\nCHASSIS=embedded\n' > /etc/machine-info
+install -d -m 0755 /etc/skel/Bilder
+
+# Build-Zertifikat darf nicht im fertigen System bleiben
+if [ -f /usr/local/share/ca-certificates/wtv-build-extra.crt ]; then
+    rm -f /usr/local/share/ca-certificates/wtv-build-extra.crt
+    update-ca-certificates --fresh >/dev/null
+fi
+
+apt-get clean
+rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*

@@ -1,0 +1,390 @@
+#!/usr/bin/python3
+"""wtv-remote – Systemdienst für Fernbedienungen.
+
+* HDMI-CEC (Pulse-Eight USB-CEC-Adapter): Tasten der TV-Fernbedienung werden in normale
+  Tastendrücke übersetzt (virtuelle Tastatur) – funktioniert in allen Apps, nicht nur in Kodi.
+  Fernseher an/aus und Standby der Box laufen synchron.
+* Bluetooth-/USB-Fernbedienungen (z. B. waipu.tv): Sondertasten (Netflix, YouTube, TV, …) können
+  angelernt und mit Aktionen belegt werden.
+
+Steuerung über /run/wangerttv/remote.sock (eine JSON-Zeile pro Anfrage).
+"""
+import json
+import logging
+import os
+import pwd
+import re
+import selectors
+import shutil
+import socketserver
+import subprocess
+import threading
+import time
+import urllib.request
+
+try:
+    import evdev
+    from evdev import ecodes as E
+except ImportError:  # pragma: no cover – auf der Box immer installiert
+    evdev = None
+    E = None
+
+RUN_DIR = "/run/wangerttv"
+SOCKET = os.path.join(RUN_DIR, "remote.sock")
+STATUS = os.path.join(RUN_DIR, "remote.json")
+API = "http://127.0.0.1:8765"
+UINPUT_NAME = "WangertTV CEC"
+log = logging.getLogger("wtv-remote")
+
+# CEC "User Control Pressed" (Opcode 0x44) -> Linux-Tastencode
+CEC_KEYS = {
+    0x00: "KEY_ENTER", 0x01: "KEY_UP", 0x02: "KEY_DOWN", 0x03: "KEY_LEFT", 0x04: "KEY_RIGHT",
+    0x09: "KEY_HOMEPAGE", 0x0A: "KEY_CONFIG", 0x0B: "KEY_COMPOSE", 0x0D: "BACK",
+    0x20: "KEY_0", 0x21: "KEY_1", 0x22: "KEY_2", 0x23: "KEY_3", 0x24: "KEY_4", 0x25: "KEY_5",
+    0x26: "KEY_6", 0x27: "KEY_7", 0x28: "KEY_8", 0x29: "KEY_9", 0x2B: "KEY_ENTER",
+    0x30: "KEY_PAGEUP", 0x31: "KEY_PAGEDOWN", 0x35: "INFO", 0x41: "KEY_VOLUMEUP", 0x42: "KEY_VOLUMEDOWN",
+    0x43: "KEY_MUTE", 0x44: "KEY_PLAYCD", 0x45: "KEY_STOPCD", 0x46: "KEY_PAUSECD", 0x48: "KEY_REWIND",
+    0x49: "KEY_FASTFORWARD", 0x4B: "KEY_NEXTSONG", 0x4C: "KEY_PREVIOUSSONG", 0x53: "KEY_E",
+    0x61: "KEY_PLAYPAUSE", 0x71: "KEY_F4", 0x72: "KEY_F1", 0x73: "KEY_F2", 0x74: "KEY_F3",
+}
+# kontextabhängige Tasten: Kodi kennt Rücktaste als "Zurück", Browser/Android eher Escape
+CONTEXT_KEYS = {
+    "BACK": {"kodi": "KEY_BACKSPACE", "default": "KEY_ESC"},
+    "INFO": {"kodi": "KEY_I", "default": "KEY_COMPOSE"},
+}
+CEC_ACTIONS = {0x40: "power_key", 0x6B: "power_key", 0x6C: "standby", 0x6D: "wake"}  # Power, Power-Toggle, Off, On
+
+
+def tv_home():
+    try:
+        return pwd.getpwnam("tv").pw_dir
+    except KeyError:
+        return "/home/tv"
+
+
+def load_settings():
+    try:
+        with open(os.path.join(tv_home(), ".config/wangerttv/settings.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def api(path, body):
+    req = urllib.request.Request(API + path, data=json.dumps(body).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", "X-WTV": "1"})
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read() or b"{}")
+    except OSError as exc:
+        log.debug("API %s nicht erreichbar: %s", path, exc)
+        return None
+
+
+class Remote:
+    def __init__(self):
+        self.settings = load_settings()
+        self.ctx = "default"
+        self.lock = threading.Lock()
+        self.learn_waiters = []
+        self.devices = {}         # Pfad -> InputDevice
+        self.cec_proc = None
+        self.cec_state = {"adapter": False, "tv_power": "", "tv_vendor": "", "port": ""}
+        self.phys_addr = None
+        self.uinput = None
+        self._last_status = None
+
+    # ------------------------------------------------------------------ Virtuelle Tastatur
+    def make_uinput(self):
+        if evdev is None:
+            return
+        names = {v for v in CEC_KEYS.values() if v.startswith("KEY_")}
+        for variants in CONTEXT_KEYS.values():
+            names.update(variants.values())
+        caps = [getattr(E, n) for n in sorted(names) if hasattr(E, n)]
+        try:
+            self.uinput = evdev.UInput({E.EV_KEY: caps}, name=UINPUT_NAME)
+        except Exception as exc:  # noqa: BLE001
+            log.error("uinput nicht verfügbar: %s", exc)
+
+    def tap(self, keyname):
+        if keyname in CONTEXT_KEYS:
+            keyname = CONTEXT_KEYS[keyname].get(self.ctx, CONTEXT_KEYS[keyname]["default"])
+        code = getattr(E, keyname, None) if E else None
+        if not self.uinput or code is None:
+            return
+        self.uinput.write(E.EV_KEY, code, 1)
+        self.uinput.syn()
+        time.sleep(0.02)
+        self.uinput.write(E.EV_KEY, code, 0)
+        self.uinput.syn()
+
+    # ------------------------------------------------------------------ HDMI-CEC
+    def cec_send(self, line):
+        proc = self.cec_proc
+        if proc and proc.poll() is None:
+            try:
+                proc.stdin.write(line + "\n")
+                proc.stdin.flush()
+                return True
+            except OSError:
+                return False
+        return False
+
+    def cec_loop(self):
+        if not shutil.which("cec-client"):
+            log.warning("cec-client fehlt – HDMI-CEC deaktiviert")
+            return
+        while True:
+            cec = self.settings.get("cec", {})
+            if cec.get("enabled") is False:
+                self.cec_state["adapter"] = False
+                time.sleep(30)
+                continue
+            out = subprocess.run(["cec-client", "-l"], capture_output=True, text=True, check=False).stdout
+            m = re.search(r"Found devices:\s*(\d+)", out)
+            if not m or int(m.group(1)) == 0:
+                self.cec_state["adapter"] = False
+                self.write_status()
+                time.sleep(20)
+                continue
+            name = (self.settings.get("device_name") or "WangertTV Box")[:14]
+            cmd = ["cec-client", "-t", "p", "-d", "8", "-o", name]
+            port = int(cec.get("hdmi_port") or 0)
+            if port:
+                cmd += ["-p", str(port)]
+            log.info("Starte %s", " ".join(cmd))
+            self.cec_proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                             stderr=subprocess.STDOUT, text=True, bufsize=1)
+            self.cec_state["adapter"] = True
+            self.write_status()
+            threading.Timer(6, self.cec_startup).start()
+            for line in self.cec_proc.stdout:
+                self.cec_line(line.strip())
+            self.cec_state["adapter"] = False
+            self.write_status()
+            log.warning("cec-client beendet – neuer Versuch in 5 s")
+            time.sleep(5)
+
+    def cec_startup(self):
+        if self.settings.get("cec", {}).get("tv_on_with_box", True):
+            self.cec_send("on 0")
+            time.sleep(1)
+            self.cec_send("as")
+        self.cec_send("pow 0")
+
+    def cec_line(self, line):
+        pa = re.search(r"physical address:?\s*([0-9a-f])\.([0-9a-f])\.([0-9a-f])\.([0-9a-f])", line, re.I)
+        if pa:
+            a, b, c, d = (int(x, 16) for x in pa.groups())
+            self.phys_addr = (a << 12) | (b << 8) | (c << 4) | d
+            self.cec_state["port"] = f"{a}.{b}.{c}.{d}"
+        if "power status:" in line:
+            self.cec_state["tv_power"] = line.split("power status:", 1)[1].strip()
+            self.write_status()
+        m = re.search(r"vendor\s*(?:id)?\s*[:=]\s*([A-Za-z][\w &-]+)", line)
+        if m and "TV" in line:
+            self.cec_state["tv_vendor"] = m.group(1).strip()
+        m = re.search(r">>\s*([0-9a-f])([0-9a-f]):([0-9a-f]{2})((?::[0-9a-f]{2})*)", line, re.I)
+        if not m:
+            return
+        src, opcode = int(m.group(1), 16), int(m.group(3), 16)
+        params = [int(x, 16) for x in m.group(4).split(":") if x]
+        if src != 0:
+            return   # nur Nachrichten vom Fernseher
+        cec = self.settings.get("cec", {})
+        if opcode == 0x44 and params:
+            code = params[0]
+            if code in CEC_ACTIONS:
+                api("/api/remote/action", {"action": CEC_ACTIONS[code], "source": "cec"})
+            elif code in CEC_KEYS:
+                self.handle_learned(f"cec:{code:02x}", CEC_KEYS[code], "TV-Fernbedienung (CEC)")
+                self.tap(CEC_KEYS[code])
+        elif opcode == 0x36:   # Standby vom Fernseher
+            self.cec_state["tv_power"] = "standby"
+            if cec.get("standby_with_tv", True):
+                api("/api/power", {"action": "standby", "source": "cec"})
+        elif opcode in (0x80, 0x86):   # Fernseher schaltet auf einen HDMI-Eingang – unseren?
+            target = params[-2:] if len(params) >= 2 else []
+            if self.phys_addr is not None and len(target) == 2 and (target[0] << 8 | target[1]) == self.phys_addr:
+                self.cec_state["tv_power"] = "on"
+                api("/api/power", {"action": "wake", "source": "cec"})
+        self.write_status()
+
+    # ------------------------------------------------------------------ Bluetooth/USB-Fernbedienungen
+    def scan_devices(self):
+        """Überwacht alle Eingabegeräte mit Tasten (ohne sie zu blockieren – Tasten kommen weiterhin überall an)."""
+        if evdev is None:
+            return
+        for path in evdev.list_devices():
+            if path in self.devices:
+                continue
+            try:
+                dev = evdev.InputDevice(path)
+            except OSError:
+                continue
+            if dev.name == UINPUT_NAME or not dev.capabilities().get(E.EV_KEY):
+                dev.close()
+                continue
+            self.devices[path] = dev
+            log.info("Eingabegerät: %s (%s)", dev.name, path)
+        for path in list(self.devices):
+            if not os.path.exists(path):
+                self.devices.pop(path).close()
+
+    def input_loop(self):
+        if evdev is None:
+            log.warning("python3-evdev fehlt – Tastenbelegung deaktiviert")
+            return
+        last_scan = 0
+        scan_values = {}
+        while True:
+            if time.time() - last_scan > 3:
+                self.scan_devices()
+                last_scan = time.time()
+                self.write_status()
+            sel = selectors.DefaultSelector()
+            for dev in list(self.devices.values()):
+                try:
+                    sel.register(dev, selectors.EVENT_READ)
+                except (OSError, ValueError):
+                    pass
+            try:
+                ready = sel.select(timeout=1)
+            except OSError:
+                ready = []
+            for key, _ in ready:
+                dev = key.fileobj
+                try:
+                    for ev in dev.read():
+                        if ev.type == E.EV_MSC and ev.code == E.MSC_SCAN:
+                            scan_values[dev.path] = ev.value
+                        elif ev.type == E.EV_KEY and ev.value == 1:
+                            self.on_key(dev, ev.code, scan_values.pop(dev.path, None))
+                except OSError:
+                    self.devices.pop(dev.path, None)
+            sel.close()
+
+    def on_key(self, dev, code, scan):
+        name = E.KEY.get(code, f"KEY_{code}") if code in E.KEY else E.BTN.get(code, f"KEY_{code}")
+        if isinstance(name, list):
+            name = name[0]
+        key_match = f"key:{name}"
+        scan_match = f"scan:{scan:x}" if scan is not None else None
+        unknown = name in ("KEY_UNKNOWN", f"KEY_{code}")
+        if self.handle_learned(scan_match if unknown and scan_match else key_match, name, dev.name):
+            return
+        for m in self.settings.get("remote", {}).get("mappings", []):
+            if m.get("match") in (key_match, scan_match):
+                log.info("Taste %s -> %s", m["match"], m.get("action"))
+                threading.Thread(target=api, args=("/api/remote/action", {"action": m.get("action", "")}), daemon=True).start()
+                return
+
+    def handle_learned(self, match, name, device):
+        with self.lock:
+            waiters, self.learn_waiters = self.learn_waiters, []
+        for w in waiters:
+            w["result"] = {"ok": True, "match": match, "key": name, "device": device}
+            w["event"].set()
+        return bool(waiters)
+
+    def learn(self, seconds):
+        waiter = {"event": threading.Event(), "result": None}
+        with self.lock:
+            self.learn_waiters.append(waiter)
+        waiter["event"].wait(timeout=max(1, min(30, seconds)))
+        with self.lock:
+            if waiter in self.learn_waiters:
+                self.learn_waiters.remove(waiter)
+        return waiter["result"] or {"ok": False, "message": "timeout"}
+
+    # ------------------------------------------------------------------ Status / Steuerung
+    def write_status(self):
+        st = {"cec": dict(self.cec_state), "devices": sorted({d.name for d in self.devices.values()}),
+              "ctx": self.ctx}
+        if st == self._last_status and time.time() - getattr(self, "_status_ts", 0) < 30:
+            return
+        self._last_status = st
+        self._status_ts = time.time()
+        tmp = STATUS + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({**st, "ts": time.time()}, fh)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, STATUS)
+
+    def command(self, req):
+        cmd = req.get("cmd")
+        if cmd == "ctx":
+            self.ctx = "kodi" if req.get("value") == "kodi" else "default"
+            return {"ok": True}
+        if cmd == "learn":
+            return self.learn(int(req.get("seconds", 15)))
+        if cmd == "reload":
+            old_port = self.settings.get("cec", {}).get("hdmi_port")
+            old_name = self.settings.get("device_name")
+            self.settings = load_settings()
+            if (old_port != self.settings.get("cec", {}).get("hdmi_port") or
+                    old_name != self.settings.get("device_name")) and self.cec_proc:
+                self.cec_proc.terminate()   # mit neuem Namen/Port neu verbinden
+            return {"ok": True}
+        if cmd == "tv_on":
+            ok = self.cec_send("on 0")
+            time.sleep(0.8)
+            self.cec_send("as")
+            return {"ok": ok}
+        if cmd == "tv_off":
+            return {"ok": self.cec_send("standby 0")}
+        if cmd == "active":
+            return {"ok": self.cec_send("as")}
+        if cmd in ("volup", "voldown", "mute"):
+            return {"ok": self.cec_send(cmd)}
+        if cmd == "status":
+            return {"ok": True, "cec": self.cec_state, "devices": sorted({d.name for d in self.devices.values()})}
+        return {"ok": False, "message": "unknown"}
+
+
+def serve(remote):
+    class Handler(socketserver.StreamRequestHandler):
+        def handle(self):
+            line = self.rfile.readline(65536)
+            try:
+                req = json.loads(line or b"{}")
+                res = remote.command(req if isinstance(req, dict) else {})
+            except ValueError:
+                res = {"ok": False, "message": "bad_json"}
+            self.wfile.write((json.dumps(res) + "\n").encode())
+
+    class Server(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+        daemon_threads = True
+
+    if os.path.exists(SOCKET):
+        os.unlink(SOCKET)
+    srv = Server(SOCKET, Handler)
+    try:
+        os.chown(SOCKET, 0, pwd.getpwnam("tv").pw_gid)
+        os.chmod(SOCKET, 0o660)
+    except (KeyError, OSError):
+        os.chmod(SOCKET, 0o666)
+    srv.serve_forever()
+
+
+def main():
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    os.makedirs(RUN_DIR, exist_ok=True)
+    remote = Remote()
+    remote.make_uinput()
+    threading.Thread(target=remote.cec_loop, daemon=True, name="cec").start()
+    threading.Thread(target=remote.input_loop, daemon=True, name="input").start()
+
+    def refresher():
+        while True:
+            time.sleep(30)
+            remote.settings = load_settings()
+            remote.write_status()
+    threading.Thread(target=refresher, daemon=True).start()
+    remote.write_status()
+    serve(remote)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,11 @@
+[Unit]
+Description=WangertTV – alles aktualisieren
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-update --all
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=3h

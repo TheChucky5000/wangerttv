@@ -1,0 +1,60 @@
+# WangertTV – Sway-Konfiguration für den TV-Betrieb
+# Jede App läuft im Vollbild auf einer eigenen Arbeitsfläche, der Startbildschirm auf "home".
+
+set $wtv /usr/lib/wangerttv/bin
+
+default_border none
+default_floating_border none
+hide_edge_borders both
+titlebar_border_thickness 0
+titlebar_padding 1
+font pango:Inter 1
+focus_follows_mouse no
+mouse_warping none
+focus_on_window_activation focus
+workspace_auto_back_and_forth no
+popup_during_fullscreen smart
+
+output * bg #04080f solid_color
+output * max_render_time off
+
+# Mauszeiger ausblenden (TV-Bedienung per Fernbedienung)
+seat * hide_cursor 2500
+seat * hide_cursor when-typing enable
+
+input type:keyboard {
+    xkb_layout de
+    repeat_delay 350
+    repeat_rate 25
+}
+input type:pointer {
+    accel_profile flat
+}
+
+# Alle Fenster im Vollbild, ohne Rahmen
+for_window [all] border none, fullscreen enable
+# AirPlay-Spiegelung (UxPlay) direkt in den Vordergrund holen
+for_window [title="(?i)uxplay"] focus
+
+# ------------------------------------------------------------------ Fernbedienung / Tastatur
+# Home-Taste (KEY_HOMEPAGE) – auch von CEC, waipu.tv- und Android-TV-Fernbedienungen
+bindcode --inhibited 180 exec $wtv/wtvctl home
+bindsym --inhibited XF86HomePage exec $wtv/wtvctl home
+bindsym Mod4+h exec $wtv/wtvctl home
+# Einstellungen (KEY_CONFIG / Setup-Taste)
+bindcode --inhibited 179 exec $wtv/wtvctl settings
+# Ein/Aus-Taste (KEY_POWER) -> Standby an/aus (logind ignoriert die Taste, siehe logind.conf.d)
+bindcode --inhibited --no-repeat 124 exec $wtv/wtvctl power
+bindcode --inhibited --no-repeat 150 exec $wtv/wtvctl power
+# Lautstärke
+bindsym --inhibited XF86AudioRaiseVolume exec $wtv/wtvctl volume up
+bindsym --inhibited XF86AudioLowerVolume exec $wtv/wtvctl volume down
+bindsym --inhibited XF86AudioMute exec $wtv/wtvctl volume mute
+# Bildschirmtastatur für andere Apps
+bindsym Mod4+k exec $wtv/wtvctl keyboard
+# Wartung: Terminal (Strg+Alt+T)
+bindsym Ctrl+Mod1+t exec foot
+
+# ------------------------------------------------------------------ Start
+workspace home
+exec $wtv/wtv-session

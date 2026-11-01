@@ -1,0 +1,64 @@
+#!/bin/sh
+# WangertTV – Einrichtung nach der Paketinstallation
+set -e
+
+if [ "$1" = "configure" ]; then
+    # greetd: TV-Oberfläche direkt als Benutzer "tv" starten – ohne Anmeldebildschirm
+    mkdir -p /etc/greetd
+    if [ -f /etc/greetd/config.toml ] && ! grep -q "WangertTV" /etc/greetd/config.toml; then
+        cp -f /etc/greetd/config.toml /etc/greetd/config.toml.wangerttv-orig
+    fi
+    cat > /etc/greetd/config.toml <<'CONF'
+# WangertTV: automatischer Start der TV-Oberfläche (kein Anmeldebildschirm)
+[general]
+runfile = "/run/greetd-wangerttv.run"
+
+[terminal]
+vt = 7
+
+[initial_session]
+command = "/usr/lib/wangerttv/bin/wtv-sway"
+user = "tv"
+
+# Falls die Sitzung einmal beendet wird: kurz warten, greetd neu starten -> automatische Anmeldung erneut
+[default_session]
+command = "/bin/sh -c 'sleep 2; systemctl --no-block restart greetd.service'"
+user = "_greetd"
+CONF
+
+    # Bluetooth: Fernbedienungen (z. B. waipu.tv) zuverlässig koppeln und automatisch neu verbinden
+    if [ -f /etc/bluetooth/main.conf ]; then
+        sed -i -E \
+            -e 's/^#?[[:space:]]*FastConnectable[[:space:]]*=.*/FastConnectable = true/' \
+            -e 's/^#?[[:space:]]*JustWorksRepairing[[:space:]]*=.*/JustWorksRepairing = always/' \
+            -e 's/^#?[[:space:]]*AutoEnable[[:space:]]*=.*/AutoEnable = true/' \
+            /etc/bluetooth/main.conf
+    fi
+
+    install -d -m 0755 /var/lib/wangerttv /var/lib/wangerttv/update /etc/wangerttv/icons /etc/wangerttv/apps.d
+
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload || true
+    fi
+    systemctl enable greetd.service wtv-remote.service wtv-update-check.timer wtv-autoupdate.timer >/dev/null 2>&1 || true
+    for dm in gdm3 sddm lightdm; do
+        systemctl disable "$dm.service" >/dev/null 2>&1 || true
+    done
+    systemctl set-default graphical.target >/dev/null 2>&1 || true
+    # Spotify Connect läuft in der TV-Sitzung (mit Ton über PipeWire), nicht als Systemdienst
+    systemctl disable raspotify.service >/dev/null 2>&1 || true
+
+    # Bootanimation
+    if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+        if [ "$(plymouth-set-default-theme 2>/dev/null)" != "wangerttv" ]; then
+            plymouth-set-default-theme wangerttv || true
+            if command -v update-initramfs >/dev/null 2>&1 && [ ! -d /run/live/medium ]; then
+                update-initramfs -u || true
+            fi
+        fi
+    fi
+    if [ -f /boot/grub/grub.cfg ] && command -v update-grub >/dev/null 2>&1 && [ ! -d /run/live/medium ]; then
+        update-grub >/dev/null 2>&1 || true
+    fi
+fi
+exit 0

@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=WangertTV
+Description=Bootanimation von WangertTV (Logo mit leuchtendem Ring)
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/wangerttv
+ScriptFile=/usr/share/plymouth/themes/wangerttv/wangerttv.script

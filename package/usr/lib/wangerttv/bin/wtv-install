@@ -1,0 +1,171 @@
+#!/usr/bin/python3
+"""wtv-install – installiert WangertTV vom Live-USB-Stick auf den internen Datenträger (UEFI).
+
+Wird über die TV-Oberfläche gestartet (wtv-install.service). Ablauf:
+  Datenträger prüfen -> GPT anlegen (EFI 512 MB + System) -> formatieren -> System kopieren
+  -> fstab, Benutzer "tv", Autostart ohne Anmeldung -> GRUB (Secure-Boot-fähig über shim) -> fertig
+"""
+import glob
+import json
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+STATUS = "/var/lib/wangerttv/update/install.json"
+LOG = "/var/log/wangerttv-install.log"
+SOURCE = "/run/live/rootfs/filesystem.squashfs"
+TARGET = "/mnt/wangerttv-target"
+
+
+def save(state, progress, message, error=""):
+    os.makedirs(os.path.dirname(STATUS), exist_ok=True)
+    tmp = STATUS + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump({"state": state, "progress": progress, "message": message, "error": error, "ts": time.time()}, fh)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, STATUS)
+
+
+def log(text):
+    with open(LOG, "a", encoding="utf-8") as fh:
+        fh.write(f"{time.strftime('%T')} {text}\n")
+
+
+def sh(cmd, check=True, timeout=1800):
+    log("$ " + " ".join(cmd))
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+    if proc.stdout:
+        log(proc.stdout[-3000:])
+    if proc.returncode and check:
+        log(proc.stderr[-3000:])
+        raise RuntimeError(f"{os.path.basename(cmd[0])} fehlgeschlagen: {proc.stderr.strip()[-300:]}")
+    return proc
+
+
+def request():
+    try:
+        home = pwd.getpwnam("tv").pw_dir
+    except KeyError:
+        home = "/home/tv"
+    with open(os.path.join(home, ".config/wangerttv/install-request.json"), encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def live_disk():
+    src = sh(["findmnt", "-n", "-o", "SOURCE", "/run/live/medium"], check=False).stdout.strip()
+    if not src:
+        return ""
+    parent = sh(["lsblk", "-no", "PKNAME", src], check=False).stdout.strip().splitlines()
+    return "/dev/" + (parent[0] if parent else os.path.basename(src))
+
+
+def partitions(disk):
+    out = sh(["lsblk", "-lnpo", "NAME,TYPE", disk]).stdout
+    return [line.split()[0] for line in out.splitlines() if line.split()[1:] == ["part"]]
+
+
+def copy_system():
+    """Kopiert das Live-System (reine squashfs-Ebene) mit Fortschrittsanzeige 25–75 %."""
+    proc = subprocess.Popen(["rsync", "-aHAX", "--numeric-ids", "--info=progress2", "--no-inc-recursive",
+                             f"{SOURCE}/", f"{TARGET}/"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, bufsize=1)
+    buf = ""
+    while True:
+        ch = proc.stdout.read(1)
+        if not ch:
+            break
+        if ch in "\r\n":
+            m = re.search(r"\s(\d+)%", buf)
+            if m:
+                save("running", 25 + int(int(m.group(1)) * 0.5), "copy")
+            buf = ""
+        else:
+            buf += ch
+    if proc.wait() != 0:
+        raise RuntimeError("Kopieren fehlgeschlagen (rsync)")
+
+
+def main():
+    save("running", 1, "partition")
+    log("==== WangertTV-Installation gestartet ====")
+    if not os.path.isdir(SOURCE):
+        raise RuntimeError("Kein Live-System gefunden – Installation nur vom USB-Stick möglich")
+    if not os.path.isdir("/sys/firmware/efi"):
+        raise RuntimeError("Bitte im UEFI-Modus starten (im BIOS den UEFI-Start des USB-Sticks wählen)")
+    disk = request().get("disk", "")
+    if not re.fullmatch(r"/dev/(nvme\d+n\d+|sd[a-z]+|vd[a-z]+|mmcblk\d+)", disk) or not os.path.exists(disk):
+        raise RuntimeError(f"Ungültiger Datenträger: {disk}")
+    if disk == live_disk():
+        raise RuntimeError("Der USB-Stick selbst kann nicht das Ziel sein")
+
+    # ---------------------------------------------------------- Partitionieren
+    for part in partitions(disk):
+        sh(["umount", "-f", part], check=False)
+    sh(["swapoff", "-a"], check=False)
+    sh(["wipefs", "-af", disk])
+    sh(["sgdisk", "--zap-all", disk])
+    sh(["sgdisk", "-n1:0:+512M", "-t1:ef00", "-c1:EFI", "-n2:0:0", "-t2:8304", "-c2:WangertTV", disk])
+    sh(["partprobe", disk], check=False)
+    sh(["udevadm", "settle"], check=False)
+    time.sleep(2)
+    parts = partitions(disk)
+    if len(parts) < 2:
+        raise RuntimeError("Partitionen wurden nicht erkannt")
+    efi, root = parts[0], parts[1]
+
+    save("running", 10, "format")
+    sh(["mkfs.vfat", "-F", "32", "-n", "EFI", efi])
+    sh(["mkfs.ext4", "-F", "-L", "wangerttv", root])
+    os.makedirs(TARGET, exist_ok=True)
+    sh(["mount", root, TARGET])
+    os.makedirs(f"{TARGET}/boot/efi", exist_ok=True)
+
+    # ---------------------------------------------------------- Kopieren
+    save("running", 25, "copy")
+    copy_system()
+    sh(["mount", efi, f"{TARGET}/boot/efi"])
+
+    # ---------------------------------------------------------- Einrichten
+    save("running", 78, "config")
+    uuid_root = sh(["blkid", "-s", "UUID", "-o", "value", root]).stdout.strip()
+    uuid_efi = sh(["blkid", "-s", "UUID", "-o", "value", efi]).stdout.strip()
+    with open(f"{TARGET}/etc/fstab", "w", encoding="utf-8") as fh:
+        fh.write("# WangertTV\n"
+                 f"UUID={uuid_root}  /          ext4  defaults,noatime,errors=remount-ro  0 1\n"
+                 f"UUID={uuid_efi}   /boot/efi  vfat  umask=0077  0 2\n"
+                 "tmpfs  /tmp  tmpfs  defaults,nosuid,nodev,size=25%  0 0\n")
+    # Im Live-Betrieb eingerichtete WLAN-Verbindungen übernehmen
+    for conn in glob.glob("/etc/NetworkManager/system-connections/*"):
+        dest = f"{TARGET}/etc/NetworkManager/system-connections/"
+        os.makedirs(dest, exist_ok=True)
+        shutil.copy2(conn, dest)
+        os.chmod(os.path.join(dest, os.path.basename(conn)), 0o600)
+    for mnt in ("dev", "dev/pts", "proc", "sys", "run"):
+        sh(["mount", "--bind", f"/{mnt}", f"{TARGET}/{mnt}"])
+    sh(["mount", "-t", "efivarfs", "efivarfs", f"{TARGET}/sys/firmware/efi/efivars"], check=False)
+
+    save("running", 85, "bootloader")
+    sh(["chroot", TARGET, "/usr/lib/wangerttv/bin/wtv-target-setup"], timeout=3600)
+    save("running", 97, "config")
+
+    # ---------------------------------------------------------- Aufräumen
+    for mnt in ("sys/firmware/efi/efivars", "run", "sys", "proc", "dev/pts", "dev", "boot/efi", ""):
+        sh(["umount", "-l", f"{TARGET}/{mnt}".rstrip("/")], check=False)
+    sh(["sync"], check=False)
+    save("done", 100, "done")
+    log("==== Installation erfolgreich ====")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:  # noqa: BLE001
+        log(f"FEHLER: {exc!r}")
+        save("error", 0, str(exc)[:300], str(exc))
+        for mnt in ("sys/firmware/efi/efivars", "run", "sys", "proc", "dev/pts", "dev", "boot/efi", ""):
+            subprocess.run(["umount", "-l", f"{TARGET}/{mnt}".rstrip("/")], capture_output=True, check=False)
+        sys.exit(1)

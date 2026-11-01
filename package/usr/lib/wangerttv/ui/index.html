@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, initial-scale=1">
+  <title>WangertTV</title>
+  <link rel="stylesheet" href="/assets/app.css">
+</head>
+<body>
+  <!-- Logo-Symbole (werden per <use> wiederverwendet) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="g-brand" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#22e1ff"/><stop offset=".55" stop-color="#1477ff"/><stop offset="1" stop-color="#0b2f8a"/>
+      </linearGradient>
+      <symbol id="logo-mark" viewBox="0 0 64 64">
+        <rect x="2" y="2" width="60" height="60" rx="17" fill="url(#g-brand)"/>
+        <path d="M14 21h6.5l4.4 15.2L29.6 21h4.8l4.7 15.2L43.5 21H50l-8 24h-6l-4-12.6L28 45h-6z" fill="#fff"/>
+        <rect x="20" y="49" width="24" height="3.4" rx="1.7" fill="#fff" opacity=".85"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <div id="app"></div>
+
+  <!-- Startanimation – setzt die Plymouth-Bootanimation nahtlos fort -->
+  <div id="boot" class="boot">
+    <div class="boot-glow"></div>
+    <div class="boot-logo">
+      <svg class="boot-ring" viewBox="0 0 200 200" aria-hidden="true">
+        <defs><linearGradient id="g-ring" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stop-color="#22e1ff" stop-opacity="0"/><stop offset="1" stop-color="#22e1ff"/></linearGradient></defs>
+        <circle cx="100" cy="100" r="92" fill="none" stroke="url(#g-ring)" stroke-width="5" stroke-linecap="round" stroke-dasharray="380 600"/>
+      </svg>
+      <svg class="boot-mark"><use href="#logo-mark"/></svg>
+    </div>
+    <div class="boot-word">Wangert<b>TV</b></div>
+  </div>
+
+  <script src="/assets/i18n.js"></script>
+  <script src="/assets/icons.js"></script>
+  <script src="/assets/app.js"></script>
+</body>
+</html>

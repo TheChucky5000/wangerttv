@@ -1,0 +1,113 @@
+# WangertTV – Pakete aus Debian (Fremdquellen wie Chrome/Waydroid folgen im Hook 0100)
+
+# Live-System
+live-boot
+live-config
+live-config-systemd
+
+# Basis
+sudo
+locales-all
+dbus-user-session
+polkitd
+curl
+ca-certificates
+gnupg
+lsb-release
+systemd-timesyncd
+console-setup
+bash-completion
+pciutils
+usbutils
+
+# Kernel, Firmware & Grafik (Intel/AMD Mini-PCs, z. B. Geekom Mini IT11 mit Iris Xe + Intel AX201)
+linux-image-amd64
+firmware-linux
+firmware-iwlwifi
+firmware-sof-signed
+firmware-realtek
+# Intel-Grafik (GuC/HuC für Iris Xe Videoeinheit) und Intel-Ton (HDMI-Audio über SOF)
+firmware-intel-graphics
+firmware-intel-sound
+firmware-misc-nonfree
+intel-microcode
+amd64-microcode
+mesa-va-drivers
+intel-media-va-driver-non-free
+mesa-vulkan-drivers
+vainfo
+
+# Installer auf die SSD (UEFI, Secure-Boot-fähig)
+grub-efi-amd64
+grub-efi-amd64-signed
+shim-signed
+efibootmgr
+gdisk
+parted
+dosfstools
+e2fsprogs
+rsync
+squashfs-tools
+
+# TV-Oberfläche & Sitzung (ohne Anmeldebildschirm)
+greetd
+sway
+swayidle
+xwayland
+wlr-randr
+foot
+plymouth
+plymouth-label
+fonts-inter
+fonts-noto-core
+fonts-noto-color-emoji
+python3
+python3-evdev
+python3-qrcode
+playerctl
+
+# Ton, Netzwerk, Bluetooth
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+pulseaudio-utils
+alsa-utils
+network-manager
+avahi-daemon
+libnss-mdns
+bluez
+rfkill
+iw
+
+# Video- & Audio-Codecs: H.264, H.265/HEVC (10-bit), VP9, AV1, MPEG-2, VC-1 – Hardware-Dekodierung per VA-API;
+# Dolby Digital (AC3), Dolby Digital Plus (E-AC3), Dolby TrueHD/Atmos, DTS, DTS-HD (Dekodierung oder HDMI-Passthrough)
+ffmpeg
+libavcodec-extra
+va-driver-all
+i965-va-driver-shaders
+gstreamer1.0-plugins-base
+gstreamer1.0-plugins-ugly
+gstreamer1.0-pipewire
+gstreamer1.0-alsa
+# Intel oneVPL/Quick Sync (Hardware-Video für ffmpeg)
+libvpl2
+libmfx-gen1.2
+libbluray2
+libdvdnav4
+flac
+opus-tools
+
+# Medien: Kodi + IPTV, AirPlay, HDMI-CEC, Flatpak
+kodi
+kodi-pvr-iptvsimple
+kodi-inputstream-adaptive
+kodi-inputstream-ffmpegdirect
+kodi-eventclients-kodi-send
+uxplay
+gstreamer1.0-plugins-good
+gstreamer1.0-plugins-bad
+gstreamer1.0-libav
+gstreamer1.0-vaapi
+cec-utils
+flatpak

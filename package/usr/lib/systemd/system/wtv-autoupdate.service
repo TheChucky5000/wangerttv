@@ -1,0 +1,11 @@
+[Unit]
+Description=WangertTV – automatische Updates
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-update --auto
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=3h

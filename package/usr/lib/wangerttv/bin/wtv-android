@@ -1,0 +1,104 @@
+#!/usr/bin/python3
+"""wtv-android – richtet den Android-Bereich (Waydroid mit Google Play) ein. Läuft als root.
+
+  wtv-android init   Android mit Google Play herunterladen und einrichten
+  wtv-android id     Android-Geräte-ID (GSF) für die Google-Registrierung auslesen
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+STATUS = "/var/lib/wangerttv/update/android.json"
+BASE_PROP = "/var/lib/waydroid/waydroid_base.prop"
+# So erscheint die Box bei Google, im Play Store und in Android-Apps
+PROPS = {
+    "ro.product.brand": "Wangert", "ro.product.manufacturer": "Wangert", "ro.product.model": "WangertTV Box",
+    "ro.product.system.model": "WangertTV Box", "ro.product.vendor.model": "WangertTV Box",
+    "persist.waydroid.multi_windows": "false",
+}
+
+
+def load():
+    try:
+        with open(STATUS, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def save(**fields):
+    st = load()
+    st.update(fields)
+    os.makedirs(os.path.dirname(STATUS), exist_ok=True)
+    tmp = STATUS + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(st, fh)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, STATUS)
+
+
+def init():
+    save(state="running", progress=1, message="Android wird heruntergeladen …", error="")
+    subprocess.run(["modprobe", "binder_linux", "devices=binder,hwbinder,vndbinder"], check=False)
+    proc = subprocess.Popen(["waydroid", "init", "-s", "GAPPS", "-f"], stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, bufsize=1)
+    buf, phase = "", 0
+    for ch in iter(lambda: proc.stdout.read(1), ""):
+        if ch not in "\r\n":
+            buf += ch
+            continue
+        line, buf = buf.strip(), ""
+        if not line:
+            continue
+        if "system" in line.lower() and "download" in line.lower():
+            phase = 0
+        elif "vendor" in line.lower() and "download" in line.lower():
+            phase = 1
+        m = re.search(r"([\d.]+)\s*/\s*([\d.]+)\s*MB", line)
+        if m and float(m.group(2)) > 0:
+            pct = float(m.group(1)) / float(m.group(2))
+            save(state="running", progress=int(2 + (phase * 45) + pct * 45), message=line[-80:])
+    if proc.wait() != 0:
+        save(state="error", progress=0, message="Android konnte nicht eingerichtet werden (siehe waydroid log)")
+        return 1
+    save(state="running", progress=95, message="Android wird eingerichtet …")
+    lines = []
+    if os.path.exists(BASE_PROP):
+        with open(BASE_PROP, encoding="utf-8") as fh:
+            lines = [ln for ln in fh.read().splitlines() if ln.split("=", 1)[0] not in PROPS]
+    lines += [f"{k}={v}" for k, v in PROPS.items()]
+    with open(BASE_PROP, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+    subprocess.run(["systemctl", "enable", "--now", "waydroid-container.service"], check=False)
+    save(state="done", progress=100, message="")
+    return 0
+
+
+def android_id():
+    env_cmd = ("ANDROID_RUNTIME_ROOT=/apex/com.android.runtime ANDROID_DATA=/data "
+               "ANDROID_TZDATA_ROOT=/apex/com.android.tzdata ANDROID_I18N_ROOT=/apex/com.android.i18n "
+               "sqlite3 /data/data/com.google.android.gsf/databases/gservices.db "
+               "\"select value from main where name = 'android_id';\"")
+    for _ in range(10):
+        proc = subprocess.run(["waydroid", "shell", "--", "sh", "-c", env_cmd], capture_output=True, text=True,
+                              timeout=30, check=False)
+        m = re.search(r"\b(\d{10,25})\b", proc.stdout)
+        if m:
+            save(android_id=m.group(1))
+            return 0
+        time.sleep(3)
+    save(message="Geräte-ID noch nicht verfügbar – zuerst den Play Store einmal öffnen")
+    return 1
+
+
+if __name__ == "__main__":
+    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    if mode == "init":
+        sys.exit(init())
+    if mode == "id":
+        sys.exit(android_id())
+    print(__doc__)
+    sys.exit(2)

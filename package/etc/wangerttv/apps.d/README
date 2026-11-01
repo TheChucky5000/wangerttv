@@ -1,0 +1,5 @@
+Eigene Apps für WangertTV: JSON-Dateien hier ablegen (gleiches Format wie /usr/lib/wangerttv/apps.json).
+Beispiel (meine-app.json):
+[{"id": "ard", "name": "ARD Mediathek", "type": "web", "url": "https://www.ardmediathek.de/", "glyph": "film",
+  "category": "media", "color": "#00396b", "color2": "#001a33"}]
+Eigene App-Symbole: /etc/wangerttv/icons/<id>.png (quadratisch) oder <id>-banner.png (16:9).

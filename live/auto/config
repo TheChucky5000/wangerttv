@@ -1,0 +1,23 @@
+#!/bin/sh
+# WangertTV – live-build-Konfiguration (Debian 13 "trixie", amd64, UEFI + BIOS bootfähig)
+set -e
+
+lb config noauto \
+    --mode debian \
+    --distribution trixie \
+    --architectures amd64 \
+    --linux-flavours amd64 \
+    --archive-areas "main contrib non-free non-free-firmware" \
+    --binary-images iso-hybrid \
+    --debian-installer none \
+    --firmware-chroot false \
+    --security true \
+    --updates true \
+    --apt-indices false \
+    --memtest none \
+    --image-name wangerttv \
+    --iso-application "WangertTV" \
+    --iso-publisher "Mike Wangert" \
+    --iso-volume "WANGERTTV" \
+    --bootappend-live "boot=live components noautologin quiet splash loglevel=3 vt.global_cursor_default=0 systemd.show_status=false username=tv user-fullname=WangertTV hostname=wangerttv-box locales=de_DE.UTF-8 keyboard-layouts=de timezone=Europe/Berlin user-default-groups=audio,video,render,input,bluetooth,netdev,plugdev,dialout,sudo,users" \
+    "${@}"

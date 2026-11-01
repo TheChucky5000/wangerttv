@@ -1,0 +1,42 @@
+#!/bin/sh
+# WangertTV – Fremdquellen: Google Chrome (YouTube/Netflix mit Widevine), Spotify Connect (raspotify/librespot),
+# Waydroid (Android + Play Store) und Flathub (Spotify-App)
+set -e
+export DEBIAN_FRONTEND=noninteractive
+
+# optionales Build-Zertifikat (siehe build.sh, WTV_EXTRA_CA) aktivieren
+if [ -f /usr/local/share/ca-certificates/wtv-build-extra.crt ]; then
+    update-ca-certificates >/dev/null
+fi
+
+install -d -m 0755 /etc/apt/keyrings
+
+echo "I: Google Chrome"
+curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor --yes -o /etc/apt/keyrings/google-chrome.gpg
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
+    > /etc/apt/sources.list.d/google-chrome.list
+
+echo "I: raspotify (Spotify Connect)"
+curl -fsSL https://dtcooper.github.io/raspotify/key.asc -o /usr/share/keyrings/raspotify_key.asc
+echo "deb [signed-by=/usr/share/keyrings/raspotify_key.asc] https://dtcooper.github.io/raspotify raspotify main" \
+    > /etc/apt/sources.list.d/raspotify.list
+
+echo "I: Waydroid"
+curl -fsSL https://repo.waydro.id -o /tmp/waydroid-repo.sh && bash /tmp/waydroid-repo.sh trixie \
+    || echo "W: Waydroid-Paketquelle nicht verfügbar"
+rm -f /tmp/waydroid-repo.sh
+
+apt-get update
+apt-get install -y google-chrome-stable
+apt-get install -y raspotify || echo "W: raspotify nicht installiert"
+apt-get install -y waydroid || echo "W: waydroid nicht installiert"
+apt-get install -y wvkbd || echo "W: wvkbd nicht verfügbar"
+
+# Diese Dienste startet WangertTV selbst zum richtigen Zeitpunkt
+systemctl disable raspotify.service >/dev/null 2>&1 || true
+systemctl disable waydroid-container.service >/dev/null 2>&1 || true
+
+echo "I: Flathub + Spotify"
+flatpak remote-add --system --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --system -y --noninteractive flathub com.spotify.Client \
+    || echo "W: Spotify wird beim ersten Start installiert"

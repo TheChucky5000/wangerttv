@@ -1,0 +1,24 @@
+#!/bin/sh
+# WangertTV – Bootmenü des USB-Sticks: eigenes Hintergrundbild und Beschriftung
+set -e
+if [ -f wangerttv/splash-grub.png ] && [ -d boot/grub ]; then
+    cp -f wangerttv/splash-grub.png boot/grub/splash.png
+fi
+if [ -f wangerttv/splash-isolinux.png ] && [ -d isolinux ]; then
+    cp -f wangerttv/splash-isolinux.png isolinux/splash.png
+fi
+rm -rf wangerttv
+for f in boot/grub/grub.cfg isolinux/live.cfg isolinux/menu.cfg; do
+    if [ -f "$f" ]; then
+        sed -i -e 's/Live system (amd64 fail-safe mode)/WangertTV (abgesicherter Modus)/' \
+               -e 's/Live system (amd64)/WangertTV starten/' "$f"
+    fi
+done
+# Nach 5 Sekunden automatisch starten (TV-Box ohne Tastatur)
+if [ -f boot/grub/config.cfg ] && ! grep -q "^set timeout=" boot/grub/config.cfg; then
+    printf '\nset default=0\nset timeout=5\n' >> boot/grub/config.cfg
+fi
+if [ -f isolinux/isolinux.cfg ]; then
+    sed -i 's/^timeout .*/timeout 50/' isolinux/isolinux.cfg
+    grep -q '^timeout ' isolinux/isolinux.cfg || echo 'timeout 50' >> isolinux/isolinux.cfg
+fi

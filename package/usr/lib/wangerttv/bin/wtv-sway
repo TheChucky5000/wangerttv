@@ -1,0 +1,38 @@
+#!/bin/bash
+# WangertTV – startet die TV-Sitzung. Wird von greetd automatisch (ohne Anmeldebildschirm) aufgerufen.
+set -u
+
+LOGDIR="$HOME/.cache/wangerttv/logs"
+mkdir -p "$LOGDIR"
+# Logs klein halten
+for f in "$LOGDIR"/*.log; do
+    [ -f "$f" ] && [ "$(stat -c %s "$f")" -gt 5242880 ] && mv -f "$f" "$f.old"
+done
+
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=sway
+export XDG_SESSION_DESKTOP=sway
+export QT_QPA_PLATFORM="wayland;xcb"
+export SDL_VIDEODRIVER=wayland
+export ELECTRON_OZONE_PLATFORM_HINT=auto
+export MOZ_ENABLE_WAYLAND=1
+export _JAVA_AWT_WM_NONREPARENTING=1
+
+# Hardware-Videodekodierung: Intel (z. B. Geekom IT11 / Iris Xe) nutzt den iHD-Treiber
+for vendor in /sys/class/drm/card*/device/vendor; do
+    if [ -r "$vendor" ] && [ "$(cat "$vendor")" = "0x8086" ]; then
+        export LIBVA_DRIVER_NAME=iHD
+        break
+    fi
+done
+
+start=$(date +%s)
+sway --unsupported-gpu -c /usr/lib/wangerttv/sway/config >>"$LOGDIR/sway.log" 2>&1
+rc=$?
+# Bricht Sway sofort ab (z. B. Grafiktreiber ohne 3D, virtuelle Maschine), mit Software-Darstellung erneut starten
+if [ $(( $(date +%s) - start )) -lt 20 ] && [ -z "${WLR_RENDERER:-}" ]; then
+    echo "$(date '+%F %T') Sway beendet (Code $rc) – starte mit Software-Darstellung" >>"$LOGDIR/sway.log"
+    export WLR_RENDERER=pixman WLR_NO_HARDWARE_CURSORS=1
+    exec sway --unsupported-gpu -c /usr/lib/wangerttv/sway/config >>"$LOGDIR/sway.log" 2>&1
+fi
+exit $rc

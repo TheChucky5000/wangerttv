@@ -1,0 +1,10 @@
+[Unit]
+Description=WangertTV – nach Updates suchen
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-update --check
+Nice=10
+TimeoutStartSec=30min

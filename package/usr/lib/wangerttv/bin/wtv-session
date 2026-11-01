@@ -1,0 +1,23 @@
+#!/bin/bash
+# WangertTV – läuft innerhalb von Sway und hält den Hintergrunddienst (Oberfläche + API) am Leben.
+set -u
+
+LOGDIR="$HOME/.cache/wangerttv/logs"
+mkdir -p "$LOGDIR"
+
+# Umgebung für Benutzerdienste (PipeWire, Portale, Flatpak) bereitstellen
+systemctl --user import-environment WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP DISPLAY 2>/dev/null || true
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP DISPLAY 2>/dev/null || true
+
+# Reste einer vorherigen Sitzung (z. B. hängengebliebener Browser) beenden
+pkill -u "$(id -u)" -f -- "--user-data-dir=$HOME/.config/wangerttv/profiles/" 2>/dev/null || true
+sleep 0.5
+
+export WTV_LIB=/usr/lib/wangerttv
+cd "$WTV_LIB" || exit 1
+
+while true; do
+    python3 -m wtv >>"$LOGDIR/wtvd.log" 2>&1
+    echo "$(date '+%F %T') wtvd beendet (Code $?) – Neustart in 2 s" >>"$LOGDIR/wtvd.log"
+    sleep 2
+done

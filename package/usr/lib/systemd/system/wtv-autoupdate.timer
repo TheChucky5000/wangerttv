@@ -1,0 +1,10 @@
+[Unit]
+Description=WangertTV – nachts automatisch aktualisieren
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=40min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

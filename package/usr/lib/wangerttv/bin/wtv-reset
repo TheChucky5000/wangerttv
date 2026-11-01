@@ -1,0 +1,28 @@
+#!/bin/bash
+# WangertTV – Werkseinstellungen: löscht alle Benutzerdaten und startet den Einrichtungsassistenten neu.
+set -u
+echo "WangertTV wird zurückgesetzt …" | systemd-cat -t wtv-reset
+
+systemctl stop greetd.service 2>/dev/null
+pkill -u tv 2>/dev/null
+sleep 2
+
+# Benutzerdaten (Einstellungen, Kodi, Anmeldungen, Android-Daten des Benutzers, Flatpak-Apps)
+if id tv >/dev/null 2>&1; then
+    home=$(getent passwd tv | cut -d: -f6)
+    find "$home" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null
+    install -d -o tv -g tv -m 0755 "$home/Bilder"
+fi
+
+# Android-Bereich zurücksetzen (Images bleiben, Daten werden gelöscht)
+systemctl stop waydroid-container.service 2>/dev/null
+rm -rf /var/lib/waydroid/data /var/lib/wangerttv/update/android.json
+
+# WLAN-Profile, Bluetooth-Kopplungen, Name
+rm -f /etc/NetworkManager/system-connections/*
+rm -rf /var/lib/bluetooth/*/[0-9A-F][0-9A-F]:*
+hostnamectl set-hostname wangerttv-box 2>/dev/null
+hostnamectl set-hostname --pretty "WangertTV Box" 2>/dev/null
+rm -f /var/lib/wangerttv/update/status.json
+
+systemctl reboot
