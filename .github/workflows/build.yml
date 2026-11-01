@@ -1,0 +1,51 @@
+name: WangertTV bauen
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Speicherplatz schaffen
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Tests
+        run: |
+          python3 -m unittest discover tests
+          node tests/check_ui.js
+
+      - name: Paket + ISO bauen
+        run: ./build.sh iso
+
+      - name: ISO hochladen (Artefakt)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wangerttv-iso
+          path: |
+            out/*.iso
+            out/*.iso.sha256
+          compression-level: 0
+
+      - name: Paket hochladen (Artefakt)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wangerttv-deb
+          path: out/*.deb*
+
+      # Bei einem Versions-Tag (z. B. v1.0.1) wird ein Release erstellt.
+      # Der Updater der Boxen holt sich daraus neue WangertTV-Versionen (WTV_REPO in /etc/wangerttv/update.conf).
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/*.deb
+            out/*.deb.sha256
