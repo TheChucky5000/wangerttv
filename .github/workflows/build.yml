@@ -23,7 +23,7 @@ jobs:
           node tests/check_ui.js
 
       - name: Paket + ISO bauen
-        run: ./build.sh iso
+        run: bash build.sh iso
 
       - name: ISO hochladen (Artefakt)
         uses: actions/upload-artifact@v4
