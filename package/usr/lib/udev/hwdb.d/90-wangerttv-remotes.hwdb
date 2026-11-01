@@ -1,0 +1,5 @@
+# WangertTV: Bluetooth-Fernbedienungen (Android-TV-Stil, z. B. waipu.tv 4K Stick, Google/Xiaomi/Nokia-Fernbedienungen)
+# Die OK-Taste sendet HID "Menu Pick" (Consumer 0x41) = KEY_SELECT. Browser und viele Apps kennen nur Enter –
+# daher direkt im Kernel als Enter melden. (Andere OK-Codes übersetzt zusätzlich der Dienst wtv-remote.)
+evdev:input:b0005*
+ KEYBOARD_KEY_c0041=enter

@@ -53,7 +53,9 @@ bindsym --inhibited XF86AudioMute exec $wtv/wtvctl volume mute
 # Bildschirmtastatur für andere Apps
 bindsym Mod4+k exec $wtv/wtvctl keyboard
 # Wartung: Terminal (Strg+Alt+T)
-bindsym Ctrl+Mod1+t exec foot
+# Terminal öffnet auf einer eigenen Arbeitsfläche (nicht über der Vollbild-Oberfläche); Schließen mit "exit"
+bindsym Ctrl+Mod1+t workspace wartung; exec foot
+for_window [app_id="foot"] move container to workspace wartung, workspace wartung, focus
 
 # ------------------------------------------------------------------ Start
 workspace home

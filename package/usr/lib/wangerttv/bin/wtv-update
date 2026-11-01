@@ -93,16 +93,27 @@ def installed_version():
         return "0"
 
 
+def update_repo():
+    """GitHub-Repository für WangertTV-Updates: Einstellung in der Oberfläche, sonst /etc/wangerttv/update.conf
+    (dort trägt der GitHub-Build sein eigenes Repository automatisch ein)."""
+    repo = str(settings().get("update_repo") or "").strip()
+    if not repo:
+        try:
+            with open(UPDATE_CONF, encoding="utf-8") as fh:
+                for line in fh:
+                    if line.strip().startswith("WTV_REPO="):
+                        repo = line.split("=", 1)[1].strip().strip('"')
+        except OSError:
+            pass
+    # erlaubt auch eine kopierte Adresse wie https://github.com/benutzer/wangerttv
+    repo = re.sub(r"^(https?://)?(www\.)?github\.com/", "", repo).strip("/")
+    repo = re.sub(r"\.git$", "", repo)
+    return repo
+
+
 def self_update_info():
     """Neueste WangertTV-Version aus GitHub-Releases (falls in update.conf eingerichtet)."""
-    repo = ""
-    try:
-        with open(UPDATE_CONF, encoding="utf-8") as fh:
-            for line in fh:
-                if line.strip().startswith("WTV_REPO="):
-                    repo = line.split("=", 1)[1].strip().strip('"')
-    except OSError:
-        return None
+    repo = update_repo()
     if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo):
         return None
     try:
@@ -141,7 +152,7 @@ def check():
     available = {"apt": len(apt_pkgs), "flatpak": len(set(flat)), "android": 0, "wangerttv": 1 if info and info["newer"] else 0}
     important = [p for p in apt_pkgs if re.match(r"(kodi|google-chrome|linux-image|waydroid|raspotify|uxplay|wangerttv)", p)]
     packages = important + [p for p in apt_pkgs if p not in important] + sorted(set(flat))
-    save(state="idle", progress=0, message="", last_check=time.time(), available=available,
+    save(state="idle", progress=0, message="", last_check=time.time(), available=available, repo=update_repo(),
          packages=packages[:200], total=sum(available.values()))
     return available
 
@@ -172,7 +183,7 @@ def apt_upgrade(lo, hi):
     return proc.wait()
 
 
-def update_all():
+def update_all(auto=False):
     check()
     errors = []
     save(state="running", progress=8, message="System-Pakete werden aktualisiert …")
@@ -197,17 +208,40 @@ def update_all():
             errors.append("Android")
 
     info = self_update_info()
+    self_updated = False
     if info and info["newer"]:
         save(state="running", progress=90, message=f"WangertTV {info['version']} wird installiert …")
-        if not install_self(info):
+        if install_self(info):
+            self_updated = True
+        else:
             errors.append("WangertTV")
 
-    reboot = os.path.exists("/run/reboot-required") or kernel_changed()
+    reboot = os.path.exists("/run/reboot-required") or kernel_changed() or self_updated
     msg = ("Teilweise fehlgeschlagen: " + ", ".join(errors)) if errors else ""
     save(state="error" if errors else "done", progress=100, message=msg, last_update=time.time(), reboot_required=reboot)
     check_after = check_quiet()
     status.update(check_after)
     save(state="error" if errors else "done", message=msg)
+    if auto and reboot:
+        quiet_reboot()
+
+
+def quiet_reboot():
+    """Nächtliches Update: nur neu starten, wenn die Box im Standby ist – danach bleibt sie im Standby (TV bleibt aus)."""
+    user = tv_user()
+    if not user:
+        return
+    cache = os.path.join(user.pw_dir, ".cache/wangerttv")
+    if not os.path.exists(os.path.join(cache, "standby")):
+        logline("Neustart nötig, aber die Box wird gerade benutzt – Hinweis in den Einstellungen")
+        return
+    marker = os.path.join(cache, "boot-standby")
+    with open(marker, "w", encoding="utf-8") as fh:
+        fh.write(str(time.time()))
+    os.chown(marker, user.pw_uid, user.pw_gid)
+    logline("Box ist im Standby – automatischer Neustart, um die Updates zu aktivieren")
+    save(reboot_required=False)
+    run(["systemctl", "reboot"], timeout=60)
 
 
 def check_quiet():
@@ -263,7 +297,7 @@ def main():
             update_all()
         elif mode == "--auto":
             if (settings().get("autoupdate") or {}).get("enabled", True):
-                update_all()
+                update_all(auto=True)
         else:
             print(__doc__)
             return 2

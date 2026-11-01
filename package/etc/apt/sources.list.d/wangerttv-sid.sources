@@ -1,0 +1,8 @@
+# WangertTV: Debian "sid" – wird NUR für die unten (preferences.d/wangerttv-sid) freigegebenen Pakete genutzt.
+# Grund: waipu.tv ändert seine Schnittstelle oft; die Kodi-Module in Debian 13 sind dafür zu alt
+# (pvr.waipu 21.10 stürzt ab, inputstream.adaptive 21.5.9 stürzt mit aktuellem Widevine ab).
+Types: deb
+URIs: http://deb.debian.org/debian
+Suites: sid
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp

@@ -67,16 +67,36 @@ dav1d (AV1), libbluray, libdvdnav, Google Chrome mit Widevine (DRM für Netflix 
 
 ## 1. ISO bauen
 
-Du brauchst **Docker** (unter Windows: Docker Desktop mit WSL2) oder ein **Debian 13**.
+### Unter Windows (am einfachsten)
+1. **Docker Desktop** installieren (https://www.docker.com/products/docker-desktop/), PC neu starten, Docker Desktop einmal öffnen.
+2. Das Projekt z. B. nach `C:\WangertTV` entpacken (**nicht** in OneDrive), ca. 20 GB frei.
+3. **`WangertTV-bauen.bat` doppelklicken.** Das Fenster zeigt den Fortschritt:
 
-```bash
-git clone <dein-repo> wangerttv && cd wangerttv
-./build.sh            # baut out/wangerttv-1.0.0-amd64.iso (ca. 20–40 Minuten)
-./build.sh deb        # nur das WangertTV-Paket
+```
+==> ISO-Build gestartet – dauert ca. 20–40 Minuten. Fortschritt in Schritten 1–7:
+[1/7] Debian-13-Grundsystem wird heruntergeladen      (nach 0 min)
+[2/7] Pakete werden installiert (Kodi, Codecs, …)     (nach 2 min)
+      Pakete:  40 %  (298 von 745)
+[3/7] Google Chrome, Spotify, Android werden eingerichtet
+[4/7] WangertTV wird installiert, Bootanimation …
+[5/7] System wird komprimiert – längster Schritt (10–25 Minuten)
+      … läuft noch – Schritt 5 seit 6 min (gesamt 14 min)
+[6/7] Startmenü (UEFI + BIOS) und ISO-Datei werden erstellt
+[7/7] Fertig
 ```
 
-Alternativ ohne eigenen Rechner: Projekt auf GitHub hochladen → **Actions → „WangertTV bauen“ → Run workflow**.
-Die fertige ISO liegt danach unter den Artefakten des Laufs.
+Danach öffnet sich der Ordner `out` mit `wangerttv-1.0.0-amd64.iso`.
+`WangertTV-bauen.bat details` zeigt zusätzlich alle Meldungen; das komplette Protokoll steht immer in `out\build-iso.log`.
+
+### Unter Linux
+```bash
+./build.sh            # Paket + ISO (Docker oder Debian 13 als root)
+./build.sh deb        # nur das WangertTV-Paket
+WTV_VERBOSE=1 ./build.sh   # alle Meldungen anzeigen
+```
+
+### Ohne eigenen Rechner
+Projekt auf GitHub hochladen → **Actions → „WangertTV bauen“ → Run workflow**. Die ISO liegt danach unter den Artefakten des Laufs.
 
 ## 2. Auf USB-Stick schreiben und installieren
 
@@ -102,7 +122,12 @@ Die Sprachsuche (Mikrofon) funktioniert nicht – das ist ein Google-eigenes Ver
 
 **HDMI-CEC:** Der Geekom hat kein eingebautes CEC. Mit einem **Pulse-Eight USB-CEC-Adapter** (zwischen PC und TV) wird alles automatisch erkannt.
 
-**Live-TV:** Du brauchst eine M3U-Senderliste (IPTV-Anbieter, FRITZ!Box Cable, eigener TVHeadend …). waipu.tv selbst liefert keine M3U-Liste.
+**Live-TV:** Zwei Wege, beide unter Einstellungen → Live-TV (oder im Einrichtungsassistenten):
+- **waipu.tv** (auch O2 TV): E-Mail + Passwort eintragen – WangertTV richtet den waipu.tv-PVR-Client in Kodi ein und
+  übernimmt den Kopierschutz (Widevine) aus Google Chrome.
+- **IPTV-Senderliste (M3U)**: von einem IPTV-Anbieter, einer FRITZ!Box Cable, TVHeadend …
+Weitere PVR-Clients (Zattoo, TVHeadend, Enigma2/VU+, HDHomeRun, VDR, Octonet) sind vorinstalliert und in Kodi unter
+Add-ons → Meine Add-ons → PVR-Clients zu finden. (Unter Linux bietet das Kodi-Repository keine PVR-Clients an – sie kommen aus Debian.)
 
 **Play Store:** Einstellungen → Android & Play Store → einrichten (ca. 1 GB). Danach Geräte-ID abrufen und unter
 google.com/android/uncertified eintragen (QR-Code wird angezeigt).
@@ -110,8 +135,17 @@ google.com/android/uncertified eintragen (QR-Code wird angezeigt).
 **Eigene App-Symbole / Apps:** Bilder nach `/etc/wangerttv/icons/<app-id>.png` (quadratisch) oder `<app-id>-banner.png` (16:9).
 Eigene Apps als JSON nach `/etc/wangerttv/apps.d/` (Beispiel liegt dort).
 
-**WangertTV selbst aktualisieren:** In `/etc/wangerttv/update.conf` dein GitHub-Repo eintragen (`WTV_REPO=benutzer/wangerttv`).
-Bei jedem Versions-Tag (`git tag v1.0.1 && git push --tags`) baut GitHub ein Release – die Boxen holen es sich über „Alles aktualisieren“.
+**Updates – die Box aktualisiert sich selbst:**
+- System, Kodi, Chrome, Codecs, Treiber, Flatpak-Apps (Spotify, Plex …) und Android werden **jede Nacht um 4 Uhr**
+  automatisch aktualisiert (Einstellungen → Updates → „Automatische Updates“). Alle 12 Stunden wird nach Neuem gesucht.
+- **WangertTV selbst** kommt aus deinem GitHub-Repository (muss **öffentlich** sein):
+  1. Projekt auf GitHub hochladen.
+  2. **Releases → „Draft a new release“ → Tag z. B. `v1.0.3` → „Publish release“.** GitHub baut dann automatisch
+     (ca. 40 Minuten) und hängt `wangerttv_1.0.3_all.deb` an das Release. Die Versionsnummer kommt aus dem Tag.
+  3. Boxen, die aus deinem GitHub-Build installiert wurden, kennen ihr Repository automatisch. Bei anderen einmal unter
+     **Einstellungen → Updates → „WangertTV-Updates (GitHub)“** `benutzer/repository` eintragen.
+- Braucht ein Update einen Neustart, startet die Box nachts **nur im Standby** leise neu und bleibt danach im Standby –
+  der Fernseher geht dabei nicht an. Wird sie gerade benutzt, erscheint stattdessen ein Hinweis unter Updates.
 
 ---
 

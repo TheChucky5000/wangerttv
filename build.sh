@@ -62,7 +62,7 @@ progress() {
                 "P: Begin installing config for grub"*)
                     stage 6 "Startmenü (UEFI + BIOS) und ISO-Datei werden erstellt" ;;
                 "P: Build completed successfully"*) stage 7 "Fertig" ;;
-                "E: "*|"W: "*|"I: Google"*|"I: raspotify"*|"I: Waydroid"*|"I: Flathub"*) printf '      %s\n' "$line" ;;
+                "E: "*|"W: "*|"I: Google"*|"I: Kodi"*|"I: raspotify"*|"I: Waydroid"*|"I: Flathub"*) printf '      %s\n' "$line" ;;
             esac
         else
             rc=$?
@@ -79,6 +79,8 @@ build_deb() {
     local stage
     stage="$(mktemp -d)"
     cp -a package/. "$stage/"
+    # Leere Ordner speichert Git nicht – hier sicherstellen
+    mkdir -p "$stage/usr/bin" "$stage/etc/wangerttv/icons" "$stage/etc/wangerttv/apps.d" "$stage/usr/lib/wangerttv/icons"
     ln -sf ../lib/wangerttv/bin/wtvctl "$stage/usr/bin/wtvctl"
     sed -i "s/@VERSION@/${VERSION}/" "$stage/DEBIAN/control"
     cp VERSION "$stage/usr/lib/wangerttv/VERSION"
@@ -105,6 +107,7 @@ iso_inside() {
     local work=/tmp/wangerttv-build
     rm -rf "$work"
     cp -a live "$work"
+    mkdir -p "$work/config/includes.chroot/root" "$work/config/package-lists" "$work/config/hooks/normal"
     cp "$OUT/wangerttv_${VERSION}_all.deb" "$work/config/includes.chroot/root/"
     rm -f "$work/config/includes.chroot/root/.keep"
     # Optional: zusätzliches Stammzertifikat nur für den Build (z. B. Firmen-Proxy). Wird am Ende wieder entfernt.

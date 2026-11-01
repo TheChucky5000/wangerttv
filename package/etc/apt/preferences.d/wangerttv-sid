@@ -1,0 +1,9 @@
+# WangertTV: Aus Debian "sid" keine Pakete installieren ...
+Package: *
+Pin: release n=sid
+Pin-Priority: -10
+
+# ... außer den Kodi-Modulen für waipu.tv und kopiergeschützte Streams (passen zu Kodi 21 in Debian 13)
+Package: kodi-pvr-waipu kodi-inputstream-adaptive libwebm1
+Pin: release n=sid
+Pin-Priority: 990

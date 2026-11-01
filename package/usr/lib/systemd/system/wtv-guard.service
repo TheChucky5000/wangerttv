@@ -1,0 +1,12 @@
+[Unit]
+Description=WangertTV – Wächter für die TV-Oberfläche
+After=greetd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/wangerttv/bin/wtv-guard
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

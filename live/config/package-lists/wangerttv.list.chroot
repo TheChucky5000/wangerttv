@@ -101,6 +101,15 @@ opus-tools
 # Medien: Kodi + IPTV, AirPlay, HDMI-CEC, Flatpak
 kodi
 kodi-pvr-iptvsimple
+# Weitere Live-TV-Quellen (PVR-Clients) – unter Linux nicht im Kodi-Repository, daher aus Debian
+kodi-pvr-waipu
+kodi-pvr-zattoo
+kodi-pvr-hts
+kodi-pvr-vuplus
+kodi-pvr-hdhomerun
+kodi-pvr-vdr-vnsi
+kodi-pvr-octonet
+kodi-inputstream-rtmp
 kodi-inputstream-adaptive
 kodi-inputstream-ffmpegdirect
 kodi-eventclients-kodi-send

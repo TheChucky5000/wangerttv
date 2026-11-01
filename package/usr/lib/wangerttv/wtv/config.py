@@ -49,7 +49,9 @@ DEFAULTS = {
     "timezone": "Europe/Berlin",
     "city": "",
     "apps": ["livetv", "youtube", "netflix", "spotify", "playstore", "mediathek", "browser"],
+    "livetv_source": "iptv",        # iptv | waipu
     "iptv": {"m3u": "", "epg": "", "refresh_hours": 24, "timeshift": False},
+    "waipu": {"provider": 0, "username": "", "password": ""},   # provider: 0 = waipu.tv, 1 = O2 TV
     "ambient": {
         "enabled": True,
         "minutes": 5,
@@ -68,6 +70,7 @@ DEFAULTS = {
         "hdmi_port": 0,             # 0 = automatisch
     },
     "autoupdate": {"enabled": True},
+    "update_repo": "",             # GitHub-Repository für WangertTV-Updates (leer = aus update.conf)
     "kodi": {"passthrough": False, "language_done": False},
     "display": {"mode": "auto", "scale": "auto"},
     "audio": {"sink": "", "speakers": "2.0"},   # Lautsprecher: 2.0 | 5.1 | 7.1

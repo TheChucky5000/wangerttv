@@ -167,6 +167,7 @@ document.addEventListener("keydown", (e) => {
   if (OSK.open && OSK.key(e)) { e.preventDefault(); return; }
   const k = e.key;
   if (k.startsWith("Arrow")) {
+    if (OSK.open) OSK.typed = false;   // Navigation mit Fernbedienung: OK drückt wieder die markierte Taste
     e.preventDefault();
     const dir = k.slice(5).toLowerCase();
     const cur = Nav.current;
@@ -176,7 +177,7 @@ document.addEventListener("keydown", (e) => {
     Nav.move(dir);
     return;
   }
-  if (k === "Enter" || k === "NumpadEnter" || k === "Select") {
+  if (k === "Enter" || k === "NumpadEnter") {
     e.preventDefault();
     if (e.repeat) {
       if (!enterLong && enterTimer === null) enterTimer = setTimeout(() => { enterLong = true; openContext(); }, 450);
@@ -190,11 +191,12 @@ document.addEventListener("keydown", (e) => {
   if (k === "F1" || k === "F2" || k === "F3" || k === "F4") { e.preventDefault(); colorKey(k); }
 });
 document.addEventListener("keyup", (e) => {
-  if (e.key !== "Enter" && e.key !== "NumpadEnter" && e.key !== "Select") return;
+  if (e.key !== "Enter" && e.key !== "NumpadEnter") return;
   clearTimeout(enterTimer); enterTimer = null;
   if (enterLong) { enterLong = false; return; }
   if (S.standby || S.ambient) return;
   if (!Nav.valid()) { Nav.first(); return; }
+  if (OSK.open && OSK.typed) { OSK.close(true); return; }   // mit echter Tastatur getippt: Enter = Fertig
   activate(Nav.current);
 });
 document.addEventListener("mousemove", () => { S.lastKey = Date.now(); });
@@ -287,7 +289,7 @@ const OSK = {
     sym: ["1234567890", "!?#$%&*+=/", ":;,'\"()[]{}", "<>|\\~^`€§°"],
   },
   async start({ title = "", value = "", secret = false, placeholder = "", onDone }) {
-    this.open = true; this.value = value || ""; this.cb = onDone; this.secret = secret; this.show = !secret;
+    this.open = true; this.typed = false; this.value = value || ""; this.cb = onDone; this.secret = secret; this.show = !secret;
     this.shift = false; this.mode = "abc"; this.placeholder = placeholder; this.title = title;
     this.el = overlay(`<div class="dialog osk"><h2>${esc(title)}</h2><div class="osk-field"></div><div class="osk-body"><div class="osk-keys"></div><div class="osk-phone"></div></div></div>`);
     Nav.push(this.el, { onBack: () => this.close(false) });
@@ -334,7 +336,7 @@ const OSK = {
   },
   key(e) {
     // Physische Tastatur: Zeichen direkt übernehmen
-    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) { this.value += e.key; this.render(); return true; }
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) { this.value += e.key; this.typed = true; this.render(); return true; }
     if (e.key === "Backspace" && this.value) { this.value = this.value.slice(0, -1); this.render(); return true; }
     return false;
   },
@@ -938,11 +940,25 @@ act("home-app", (d) => {
 });
 
 /* ---- Live-TV */
+function waipuItems(wz) {
+  const w = S.settings.waipu || {};
+  let h = section(t("waipu_section")) + callout(t("waipu_hint"));
+  h += item({ act: "waipu-provider", icon: "tv", title: t("waipu_provider"), val: esc(t(`waipu_prov_${w.provider || 0}`)) });
+  h += item({ act: "waipu-user", icon: "device", title: t("waipu_user"), sub: w.username ? esc(w.username) : t("not_set") });
+  h += item({ act: "waipu-pass", icon: "lock", title: t("password"), sub: w.password ? "••••••••" : t("not_set") });
+  if (w.username && w.password) h += item({ icon: "check", title: t("waipu_ok"), sub: t("waipu_ok_sub") });
+  return h;
+}
+act("waipu-provider", () => choose({ title: t("waipu_provider"), key: "waipu.provider", current: (S.settings.waipu || {}).provider || 0,
+  options: [0, 1].map((v) => ({ label: t(`waipu_prov_${v}`), value: v })) }));
+act("waipu-user", () => editText({ title: t("waipu_user"), key: "waipu.username", placeholder: "name@beispiel.de", after: loadChannels }));
+act("waipu-pass", () => editText({ title: t("waipu_pass_title"), key: "waipu.password", secret: true, after: loadChannels }));
+
 Panels.livetv = {
   lead: () => esc(t("livetv_lead")),
   render() {
     const iptv = S.settings.iptv; const res = S.panelData.iptvTest;
-    let h = callout(t("iptv_hint"));
+    let h = waipuItems(false) + section(t("iptv_section")) + callout(t("iptv_hint"));
     h += item({ act: "m3u", icon: "tv", title: t("m3u_url"), sub: iptv.m3u ? esc(iptv.m3u) : t("not_set"), val: "" });
     h += item({ act: "epg", icon: "guide", title: t("epg_url"), sub: iptv.epg ? esc(iptv.epg) : t("epg_optional"), val: "" });
     if (iptv.m3u) {
@@ -1073,10 +1089,14 @@ Panels.updates = {
     h += item({ act: "upd-run", icon: "download", title: t("update_all"), sub: t("update_all_sub"), cls: busy ? "disabled" : "" });
     h += item({ act: "upd-check", icon: "refresh", title: t("check_updates") });
     h += item({ act: "toggle", icon: "clock", title: t("autoupdate"), sub: t("autoupdate_sub"), toggle: S.settings.autoupdate.enabled, data: { k: "autoupdate.enabled" } });
+    const repo = S.settings.update_repo || u.repo || "";
+    h += item({ act: "upd-repo", icon: "server", title: t("upd_repo"), sub: repo ? t("upd_repo_set", { r: esc(repo) }) : t("upd_repo_sub"), val: repo ? "" : t("not_set") });
     if (u.last_update) h += item({ icon: "check", title: t("last_update"), sub: fmtTime(u.last_update) });
     return h;
   },
 };
+act("upd-repo", () => editText({ title: t("upd_repo"), key: "update_repo", placeholder: "benutzer/wangerttv",
+  after: async (v) => { if (v) { await api("/api/updates/check", {}); toast(t("checking"), "refresh"); } } }));
 act("upd-check", async () => { await api("/api/updates/check", {}); toast(t("checking"), "refresh"); });
 act("upd-run", async () => { if (S.updates && (S.updates.state === "running" || S.updates.state === "checking")) return; await api("/api/updates/run", {}); toast(t("update_started"), "download"); });
 act("do-reboot", () => confirmBox(t("reboot_q"), "", t("reboot"), () => api("/api/power", { action: "reboot" })));
@@ -1327,11 +1347,12 @@ WZ.livetv = {
   left: () => ({ ic: "tv", title: t("wz_live_title"), text: esc(t("wz_live_text")) }),
   right() {
     const iptv = S.settings.iptv; const res = S.panelData.iptvTest;
-    let h = callout(t("iptv_hint"));
+    const w = S.settings.waipu || {};
+    let h = waipuItems(true) + section(t("iptv_section")) + callout(t("iptv_hint"));
     h += item({ act: "m3u-wz", icon: "tv", title: t("m3u_url"), sub: iptv.m3u ? esc(iptv.m3u) : t("not_set") });
     h += item({ act: "epg-wz", icon: "guide", title: t("epg_url"), sub: iptv.epg ? esc(iptv.epg) : t("epg_optional") });
     if (res) h += res.ok ? item({ icon: "check", title: t("iptv_found", { n: res.count }), sub: esc(res.sample.join(", ")) }) : callout(t("iptv_fail", { m: esc(res.message || "") }), true);
-    return h + (iptv.m3u ? nextBtn() : `<div class="wz-footer"><button class="btn f" data-act="wz-skip">${esc(t("skip_later"))}</button></div>`);
+    return h + (iptv.m3u || (w.username && w.password) ? nextBtn() : `<div class="wz-footer"><button class="btn f" data-act="wz-skip">${esc(t("skip_later"))}</button></div>`);
   },
 };
 act("m3u-wz", () => OSK.start({ title: t("m3u_url"), value: S.settings.iptv.m3u, placeholder: "https://…/playlist.m3u", onDone: async (v) => {

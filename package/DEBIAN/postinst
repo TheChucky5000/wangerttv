@@ -37,10 +37,17 @@ CONF
 
     install -d -m 0755 /var/lib/wangerttv /var/lib/wangerttv/update /etc/wangerttv/icons /etc/wangerttv/apps.d
 
+    # Tastenbelegung der Fernbedienungen (OK-Taste -> Enter) aktivieren
+    if command -v systemd-hwdb >/dev/null 2>&1; then
+        systemd-hwdb update || true
+    fi
     if [ -d /run/systemd/system ]; then
         systemctl daemon-reload || true
+        udevadm trigger --subsystem-match=input --action=change >/dev/null 2>&1 || true
+        # Android-Treiber für Waydroid sofort laden (danach automatisch bei jedem Start)
+        modprobe binder_linux >/dev/null 2>&1 || true
     fi
-    systemctl enable greetd.service wtv-remote.service wtv-update-check.timer wtv-autoupdate.timer >/dev/null 2>&1 || true
+    systemctl enable greetd.service wtv-guard.service wtv-remote.service wtv-update-check.timer wtv-autoupdate.timer >/dev/null 2>&1 || true
     for dm in gdm3 sddm lightdm; do
         systemctl disable "$dm.service" >/dev/null 2>&1 || true
     done

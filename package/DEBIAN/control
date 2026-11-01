@@ -7,7 +7,7 @@ Maintainer: Mike Wangert <wangertmike@gmail.com>
 Depends: python3 (>= 3.11), python3-evdev, sway, swayidle, xwayland, greetd, plymouth, plymouth-label, kodi, kodi-pvr-iptvsimple,
  kodi-inputstream-adaptive, network-manager, bluez, pipewire-pulse, wireplumber, pulseaudio-utils, cec-utils, uxplay,
  avahi-daemon, flatpak, rsync, gdisk, dosfstools, e2fsprogs, polkitd, playerctl, fonts-inter, util-linux
-Recommends: google-chrome-stable, raspotify, waydroid, python3-qrcode, wvkbd, kodi-eventclients-kodi-send, foot,
+Recommends: google-chrome-stable, kodi-pvr-waipu, kodi-pvr-zattoo, kodi-pvr-hts, kodi-pvr-vuplus, raspotify, waydroid, python3-qrcode, wvkbd, kodi-eventclients-kodi-send, foot,
  kodi-inputstream-ffmpegdirect, intel-media-va-driver-non-free, va-driver-all, ffmpeg, libavcodec-extra,
  gstreamer1.0-plugins-good, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-libav, gstreamer1.0-vaapi,
  grub-efi-amd64, shim-signed, efibootmgr

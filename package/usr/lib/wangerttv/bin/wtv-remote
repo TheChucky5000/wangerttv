@@ -52,6 +52,8 @@ CONTEXT_KEYS = {
     "BACK": {"kodi": "KEY_BACKSPACE", "default": "KEY_ESC"},
     "INFO": {"kodi": "KEY_I", "default": "KEY_COMPOSE"},
 }
+# OK-/Mitte-Tasten, die als Enter weitergegeben werden (Android-TV-Fernbedienungen senden KEY_SELECT = DPAD_CENTER)
+OK_KEYS = {"KEY_SELECT", "KEY_OK"}
 CEC_ACTIONS = {0x40: "power_key", 0x6B: "power_key", 0x6C: "standby", 0x6D: "wake"}  # Power, Power-Toggle, Off, On
 
 
@@ -273,6 +275,11 @@ class Remote:
         scan_match = f"scan:{scan:x}" if scan is not None else None
         unknown = name in ("KEY_UNKNOWN", f"KEY_{code}")
         if self.handle_learned(scan_match if unknown and scan_match else key_match, name, dev.name):
+            return
+        if name in OK_KEYS and dev.name != UINPUT_NAME:
+            # OK-Taste von Android-TV-Fernbedienungen (z. B. waipu.tv): sendet "Select" statt Enter –
+            # Browser, Oberfläche und viele Apps kennen nur Enter. Daher zusätzlich Enter auslösen.
+            self.tap("KEY_ENTER")
             return
         for m in self.settings.get("remote", {}).get("mappings", []):
             if m.get("match") in (key_match, scan_match):

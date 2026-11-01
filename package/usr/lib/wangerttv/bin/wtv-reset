@@ -3,6 +3,7 @@
 set -u
 echo "WangertTV wird zurückgesetzt …" | systemd-cat -t wtv-reset
 
+systemctl stop wtv-guard.service 2>/dev/null
 systemctl stop greetd.service 2>/dev/null
 pkill -u tv 2>/dev/null
 sleep 2

@@ -38,7 +38,7 @@ apt-get purge -y live-boot live-boot-initramfs-tools live-config live-config-sys
 rm -f /etc/sudoers.d/live
 
 # Dienste
-systemctl enable greetd.service wtv-remote.service wtv-update-check.timer wtv-autoupdate.timer NetworkManager.service \
+systemctl enable greetd.service wtv-guard.service wtv-remote.service wtv-update-check.timer wtv-autoupdate.timer NetworkManager.service \
     bluetooth.service avahi-daemon.service >/dev/null 2>&1 || true
 systemctl set-default graphical.target >/dev/null 2>&1 || true
 

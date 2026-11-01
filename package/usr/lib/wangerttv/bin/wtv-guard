@@ -1,0 +1,14 @@
+#!/bin/bash
+# WangertTV – Wächter: sorgt dafür, dass die TV-Oberfläche (greetd) immer läuft.
+# Falls greetd nach mehreren Fehlversuchen aufgegeben hat (z. B. beim ersten Start nach der Installation),
+# wird er zurückgesetzt und neu gestartet – statt den Text-Anmeldebildschirm stehen zu lassen.
+sleep 20
+while true; do
+    if ! systemctl is-active -q greetd.service; then
+        echo "TV-Oberfläche läuft nicht ($(systemctl is-active greetd.service)) – wird neu gestartet"
+        systemctl reset-failed greetd.service 2>/dev/null
+        systemctl start --no-block greetd.service
+        sleep 30
+    fi
+    sleep 15
+done

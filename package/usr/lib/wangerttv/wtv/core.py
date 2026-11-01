@@ -28,7 +28,26 @@ class Core:
         sway.on_focus(self._on_focus)
 
     # ------------------------------------------------------------------ Start
+    STANDBY_FLAG = os.path.join(config.CACHE_DIR, "standby")        # Box ist im Standby (liest der Updater)
+    BOOT_STANDBY = os.path.join(config.CACHE_DIR, "boot-standby")   # Updater hat nachts neu gestartet
+
+    def _set_standby_flag(self, on):
+        try:
+            if on:
+                open(self.STANDBY_FLAG, "w").close()
+            elif os.path.exists(self.STANDBY_FLAG):
+                os.remove(self.STANDBY_FLAG)
+        except OSError:
+            pass
+
     def start(self):
+        self._set_standby_flag(False)
+        quiet_boot = os.path.exists(self.BOOT_STANDBY)
+        if quiet_boot:
+            try:
+                os.remove(self.BOOT_STANDBY)
+            except OSError:
+                pass
         system.display_apply(self.settings.get("display") or {})
         if self.settings.get("audio", "sink"):
             system.audio_set(sink=self.settings.get("audio", "sink"))
@@ -41,8 +60,12 @@ class Core:
         self.receivers.supervise()
         if self.settings.get("setup_done"):
             threading.Thread(target=self._after_setup_tasks, daemon=True).start()
-            # Box (neu) gestartet -> Fernseher einschalten und Eingang umschalten
-            if self.settings.get("cec", "tv_on_with_box"):
+            if quiet_boot:
+                # Nach einem automatischen Update-Neustart in der Nacht: im Standby bleiben, Fernseher bleibt aus
+                log.info("Neustart nach automatischem Update – bleibe im Standby")
+                threading.Timer(3, self.enter_standby, args=("auto",)).start()
+            elif self.settings.get("cec", "tv_on_with_box"):
+                # Box (neu) gestartet -> Fernseher einschalten und Eingang umschalten
                 threading.Timer(4, lambda: remote.send("tv_on")).start()
 
     def _on_focus(self, workspace):
@@ -72,6 +95,10 @@ class Core:
                 system.audio_set(sink=s.get("audio", "sink"))
             system.audio_set_speakers(s.get("audio", "speakers") or "2.0")
             self.kodi.apply_passthrough()
+        if "waipu" in changed:
+            self.kodi.write_waipu()
+            if self.kodi.ready():
+                threading.Thread(target=self.kodi.post_start, daemon=True).start()
         if "iptv" in changed:
             self.kodi.write_iptv()
             self.channels.channels(force=True)
@@ -117,6 +144,7 @@ class Core:
             if self.standby:
                 return
             self.standby = True
+        self._set_standby_flag(True)
         log.info("Standby (%s)", source)
         bus.emit("standby", on=True)
         # Wiedergabe überall anhalten
@@ -126,7 +154,7 @@ class Core:
             run(["playerctl", "-a", "pause"], timeout=5)
         self.receivers.restart_all()   # beendet laufende AirPlay-/Spotify-Wiedergabe
         self.apps.home()
-        if source != "cec" and self.settings.get("cec", "tv_off_on_standby"):
+        if source not in ("cec", "auto") and self.settings.get("cec", "tv_off_on_standby"):
             remote.send("tv_off")
         time.sleep(0.5)
         system.display_power(False)
@@ -141,6 +169,7 @@ class Core:
                 system.display_power(True)
                 return
             self.standby = False
+        self._set_standby_flag(False)
         log.info("Aufwachen (%s)", source)
         system.stop_wake_watch()
         system.display_power(True)

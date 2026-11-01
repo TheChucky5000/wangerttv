@@ -15,6 +15,31 @@ HIDDEN = {
 }
 
 
+def binder_available():
+    """Prüft, ob der Kernel den Android-Treiber (binder) hat – geladen, eingebaut oder als Modul.
+
+    Ohne Root-Rechte und ohne modinfo (liegt in /usr/sbin, für den Benutzer tv nicht im PATH).
+    Debian 13 liefert binder als Modul binder_linux (ohne binderfs).
+    """
+    if any(os.path.exists(p) for p in ("/dev/binder", "/dev/binderfs", "/sys/module/binder_linux")):
+        return True
+    try:
+        with open("/proc/filesystems", encoding="utf-8") as fh:
+            if re.search(r"\sbinder$", fh.read(), re.M):
+                return True
+    except OSError:
+        pass
+    moddir = os.path.join("/lib/modules", os.uname().release)
+    for name in ("modules.dep", "modules.builtin"):
+        try:
+            with open(os.path.join(moddir, name), encoding="utf-8", errors="replace") as fh:
+                if "drivers/android/binder" in fh.read():
+                    return True
+        except OSError:
+            continue
+    return False
+
+
 class Android:
     def __init__(self):
         self._session_proc = None
@@ -42,8 +67,7 @@ class Android:
         if installed and initialized:
             out = run(["waydroid", "status"], timeout=8)[1]
             running = bool(re.search(r"Session:\s*RUNNING", out))
-        binder = os.path.exists("/dev/binderfs") or os.path.exists("/dev/binder") or \
-            run(["modinfo", "binder_linux"], timeout=5)[0] == 0
+        binder = binder_available()
         return {
             "installed": installed, "initialized": initialized, "running": running,
             "state": st.get("state", "done" if initialized else "none"), "progress": st.get("progress", 0),

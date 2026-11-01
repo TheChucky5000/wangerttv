@@ -80,6 +80,61 @@ class Kodi:
         with open(os.path.join(USERDATA, "keymaps", "wangerttv.xml"), "w", encoding="utf-8") as fh:
             fh.write(KEYMAP)
         self.write_iptv()
+        self.write_waipu()
+        self.link_widevine()
+
+    def write_waipu(self):
+        """waipu.tv-PVR-Client (pvr.waipu) mit den Zugangsdaten aus WangertTV einrichten."""
+        w = self.settings.get("waipu") or {}
+        if not (w.get("username") and w.get("password")):
+            return False
+        values = {
+            "kodi_addon_instance_name": "waipu.tv", "kodi_addon_instance_enabled": "true",
+            "provider_select": str(int(w.get("provider") or 0)), "username": w["username"], "password": w["password"],
+            "protocol": "auto", "streaming_use_ffmpegdirect": "true",
+        }
+        folder = os.path.join(USERDATA, "addon_data", "pvr.waipu")
+        os.makedirs(folder, exist_ok=True)
+        body = "\n".join(f'    <setting id="{k}">{escape(v)}</setting>' for k, v in values.items())
+        new = f'<settings version="2">\n{body}\n</settings>\n'
+        changed = False
+        # Kodi 21 nutzt je nach Add-on settings.xml oder instance-settings-1.xml – beide schreiben
+        for name in ("instance-settings-1.xml", "settings.xml"):
+            target = os.path.join(folder, name)
+            try:
+                with open(target, encoding="utf-8") as fh:
+                    if fh.read() == new:
+                        continue
+            except OSError:
+                pass
+            with open(target, "w", encoding="utf-8") as fh:
+                fh.write(new)
+            os.chmod(target, 0o600)
+            changed = True
+        if changed:
+            self.pending_iptv = True
+        return True
+
+    @staticmethod
+    def link_widevine():
+        """Widevine (Kopierschutz für waipu.tv, Netflix-Add-ons …) aus Google Chrome für Kodi bereitstellen."""
+        cdm_dir = os.path.join(KODI_HOME, "cdm")
+        target = os.path.join(cdm_dir, "libwidevinecdm.so")
+        if os.path.exists(target) and not os.path.islink(target):
+            return   # vom InputStream Helper installiert – nicht anfassen
+        for src in ("/opt/google/chrome/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so",
+                    "/usr/lib/chromium/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so"):
+            if os.path.exists(src):
+                os.makedirs(cdm_dir, exist_ok=True)
+                if os.path.islink(target) and os.readlink(target) == src:
+                    return
+                if os.path.lexists(target):
+                    os.remove(target)
+                os.symlink(src, target)
+                manifest = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(src))), "manifest.json")
+                if os.path.exists(manifest) and not os.path.lexists(os.path.join(cdm_dir, "manifest.json")):
+                    os.symlink(manifest, os.path.join(cdm_dir, "manifest.json"))
+                return
 
     def write_iptv(self):
         iptv = self.settings.get("iptv") or {}
@@ -178,6 +233,11 @@ class Kodi:
         if not self.wait_ready():
             log.warning("Kodi antwortet nicht auf JSON-RPC")
             return False
+        w = self.settings.get("waipu") or {}
+        if w.get("username") and w.get("password"):
+            res = self.rpc("Addons.SetAddonEnabled", {"addonid": "pvr.waipu", "enabled": True})
+            if "error" in res:
+                log.warning("waipu.tv-Client konnte nicht aktiviert werden: %s", res["error"])
         iptv = self.settings.get("iptv") or {}
         if iptv.get("m3u"):
             res = self.rpc("Addons.SetAddonEnabled", {"addonid": "pvr.iptvsimple", "enabled": True})

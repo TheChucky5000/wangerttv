@@ -9,6 +9,17 @@ for f in "$LOGDIR"/*.log; do
     [ -f "$f" ] && [ "$(stat -c %s "$f")" -gt 5242880 ] && mv -f "$f" "$f.old"
 done
 
+# Auf die Grafikkarte warten: Beim ersten Start nach der Installation laden Treiber und Firmware
+# (z. B. Intel GuC/HuC) langsamer – ohne Grafikgerät würde Sway sofort abbrechen.
+for _ in $(seq 1 60); do
+    if ls /dev/dri/card* >/dev/null 2>&1 && ls /sys/class/drm/card*-*/status >/dev/null 2>&1; then
+        break
+    fi
+    sleep 0.5
+done
+sleep 1
+echo "$(date '+%F %T') Sitzung startet (Grafik: $(find /dev/dri -maxdepth 1 -name 'card*' -printf '%f ' 2>/dev/null))" >>"$LOGDIR/sway.log"
+
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=sway
 export XDG_SESSION_DESKTOP=sway
