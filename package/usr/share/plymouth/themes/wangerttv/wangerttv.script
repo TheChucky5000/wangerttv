@@ -1,8 +1,13 @@
 # WangertTV – Plymouth-Bootanimation
 # Gleicher Aufbau wie die Startanimation der Oberfläche, damit der Übergang nahtlos ist.
 
-Window.SetBackgroundTopColor(0.016, 0.035, 0.075);
+Window.SetBackgroundTopColor(0.016, 0.031, 0.059);
 Window.SetBackgroundBottomColor(0.016, 0.031, 0.059);
+
+# Hintergrund exakt wie in Sway und in der Oberfläche (gleiches Bild) – kein sichtbarer Wechsel
+bg_img = Image("bg.png").Scale(Window.GetWidth(), Window.GetHeight());
+bg = Sprite(bg_img);
+bg.SetPosition(Window.GetX(), Window.GetY(), -100);
 
 f = Window.GetHeight() / 1080;
 if (f <= 0) f = 1;
@@ -11,7 +16,8 @@ cy = Window.GetY() + Window.GetHeight() / 2 - 52 * f;
 
 glow_img = Image("glow.png").Scale(520 * f, 520 * f);
 ring_img = Image("ring.png").Scale(200 * f, 200 * f);
-mark_img = Image("mark.png").Scale(118 * f, 118 * f);
+mark_src = Image("mark.png");
+mark_img = mark_src.Scale(118 * f, 118 * f);
 word_src = Image("word.png");
 word_img = word_src.Scale(298 * f, 298 * f * word_src.GetHeight() / word_src.GetWidth());
 
@@ -38,6 +44,20 @@ fun refresh_callback ()
     wfade = (global.frame - 8) / 40;
     if (wfade < 0) wfade = 0;
     if (wfade > 1) wfade = 1;
+
+    # Logo "springt" weich auf (leicht überschwingend), Schriftzug gleitet von unten herein
+    if (global.frame <= 36)
+    {
+        p = global.frame / 36;
+        q = 1 - p;
+        s = 1 - q * q * q * (1 - 2.2 * p);
+        if (s < 0.05) s = 0.05;
+        m = mark_src.Scale(118 * f * s, 118 * f * s);
+        mark.SetImage(m);
+        mark.SetPosition(cx - m.GetWidth() / 2, cy - m.GetHeight() / 2, 3);
+    }
+    wy = (1 - wfade) * (1 - wfade) * 24 * f;
+    word.SetPosition(cx - word_img.GetWidth() / 2, cy + 134 * f + wy, 3);
 
     angle = global.frame * 2 * Math.Pi / 70;
     rotated = ring_img.Rotate(angle);

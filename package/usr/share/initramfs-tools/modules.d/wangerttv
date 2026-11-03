@@ -1,0 +1,3 @@
+# WangertTV: Intel-Grafiktreiber schon in der Initial-Ramdisk laden – die Bootanimation startet sofort in voller
+# Auflösung, ohne Wechsel des Grafiktreibers (kein schwarzes Bild zwischendurch)
+i915
