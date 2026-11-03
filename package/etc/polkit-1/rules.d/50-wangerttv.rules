@@ -13,8 +13,15 @@ polkit.addRule(function (action, subject) {
         var verb = action.lookup("verb");
         var units = ["wtv-update.service", "wtv-update-check.service", "wtv-install.service", "wtv-reset.service",
                      "wtv-android@init.service", "wtv-android@id.service", "waydroid-container.service",
-                     "wtv-remote.service", "bluetooth.service"];
+                     "wtv-remote.service", "bluetooth.service",
+                     "wtv-ssh@on.service", "wtv-ssh@off.service", "wtv-ssh@renew.service", "wtv-extras.service",
+                     "wtv-audiodriver@legacy.service", "wtv-audiodriver@sof.service",
+                     "wtv-power@balanced.service", "wtv-power@performance.service", "wtv-power@quiet.service"];
         if (units.indexOf(unit) >= 0 && (verb === "start" || verb === "restart" || verb === "stop")) {
+            return polkit.Result.YES;
+        }
+        // Bildmodus beim Start (das Skript prüft den Wert streng)
+        if (unit && unit.indexOf("wtv-bootvideo@") === 0 && verb === "start") {
             return polkit.Result.YES;
         }
     }
@@ -25,9 +32,15 @@ polkit.addRule(function (action, subject) {
         "org.freedesktop.locale1.set-keyboard",
         "org.freedesktop.login1.reboot", "org.freedesktop.login1.power-off", "org.freedesktop.login1.suspend",
         "org.freedesktop.login1.reboot-multiple-sessions", "org.freedesktop.login1.power-off-multiple-sessions",
+        "org.freedesktop.login1.suspend-multiple-sessions", "org.freedesktop.login1.suspend-ignore-inhibit",
         "org.freedesktop.NetworkManager.settings.modify.system", "org.freedesktop.NetworkManager.settings.modify.own",
         "org.freedesktop.NetworkManager.network-control", "org.freedesktop.NetworkManager.wifi.scan",
-        "org.freedesktop.NetworkManager.enable-disable-wifi", "org.freedesktop.NetworkManager.enable-disable-network"
+        "org.freedesktop.NetworkManager.enable-disable-wifi", "org.freedesktop.NetworkManager.enable-disable-network",
+        // USB-Sticks automatisch einbinden und sicher auswerfen
+        "org.freedesktop.udisks2.filesystem-mount", "org.freedesktop.udisks2.filesystem-mount-other-seat",
+        "org.freedesktop.udisks2.filesystem-unmount-others", "org.freedesktop.udisks2.power-off-drive",
+        "org.freedesktop.udisks2.power-off-drive-other-seat", "org.freedesktop.udisks2.eject-media",
+        "org.freedesktop.udisks2.eject-media-other-seat"
     ];
     if (allowed.indexOf(action.id) >= 0) {
         return polkit.Result.YES;

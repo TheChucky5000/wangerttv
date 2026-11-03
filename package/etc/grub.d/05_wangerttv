@@ -1,0 +1,8 @@
+#!/bin/sh
+# WangertTV: Meldungen von GRUB beim Start ("Loading Linux …", "Loading initial ramdisk …") unsichtbar machen –
+# Text schwarz auf schwarz. Das Startmenü (Umschalt/Esc beim Einschalten) bleibt gut lesbar.
+cat <<'GRUB'
+set color_normal=black/black
+set menu_color_normal=light-gray/black
+set menu_color_highlight=black/light-cyan
+GRUB

@@ -1,0 +1,8 @@
+# WangertTV: Aus der Raspotify-Quelle nur "raspotify" (enthält librespot) – nichts anderes
+Package: *
+Pin: origin dtcooper.github.io
+Pin-Priority: -10
+
+Package: raspotify
+Pin: origin dtcooper.github.io
+Pin-Priority: 500
