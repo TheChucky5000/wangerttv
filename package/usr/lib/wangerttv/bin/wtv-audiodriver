@@ -1,0 +1,30 @@
+#!/bin/sh
+# WangertTV: Ton-Treiber für Intel-Mini-PCs umschalten (läuft als root über wtv-audiodriver@<treiber>.service)
+#   legacy  klassischer Intel-HDA-Treiber: HDMI mit bis zu 8 Kanälen PCM (echtes 5.1/7.1) und Durchreichen
+#   sof     Intel-DSP-Treiber "Sound Open Firmware" (Auslieferungszustand; HDMI nur Stereo-PCM)
+# Danach startet die Box neu (Treiber werden nur beim Systemstart geladen).
+set -e
+CONF=/etc/modprobe.d/wangerttv-audio.conf
+case "$1" in
+    legacy)
+        cat > "$CONF" <<'CONF'
+# WangertTV: klassischer Intel-HDA-Treiber statt DSP (SOF) – HDMI-Ton mit bis zu 8 Kanälen.
+# Zurück: in WangertTV unter Einstellungen -> Bild & Ton -> Ton-Treiber, oder diese Datei löschen.
+options snd-intel-dspcfg dsp_driver=1
+CONF
+        ;;
+    sof)
+        rm -f "$CONF"
+        ;;
+    *)
+        echo "Aufruf: $0 legacy|sof" >&2
+        exit 2
+        ;;
+esac
+# Liegt der Sound-Treiber in der Initrd, muss sie die neue Einstellung kennen
+if command -v lsinitramfs >/dev/null 2>&1 && lsinitramfs "/boot/initrd.img-$(uname -r)" 2>/dev/null | grep -q "snd-intel-dspcfg"; then
+    update-initramfs -u >/dev/null 2>&1 || true
+fi
+echo "Ton-Treiber: $1 – Neustart" | systemd-cat -t wtv-audiodriver 2>/dev/null || true
+sleep 4
+systemctl reboot

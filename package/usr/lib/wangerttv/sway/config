@@ -15,7 +15,11 @@ focus_on_window_activation focus
 workspace_auto_back_and_forth no
 popup_during_fullscreen smart
 
-output * bg #04080f solid_color
+# Bildmodus/Skalierung aus den WangertTV-Einstellungen gleich beim Start (kein späterer Moduswechsel = kein Flackern)
+include ~/.config/wangerttv/sway-output.conf
+
+# Gleiches Bild wie das Ende der Bootanimation: nahtloser Übergang, bis die Oberfläche da ist
+output * bg /usr/share/wangerttv/boot.png fill #04080f
 output * max_render_time off
 
 # Mauszeiger ausblenden (TV-Bedienung per Fernbedienung)
@@ -33,8 +37,15 @@ input type:pointer {
 
 # Alle Fenster im Vollbild, ohne Rahmen
 for_window [all] border none, fullscreen enable
+# Android (Waydroid): Fenster immer auf der Android-Arbeitsfläche
+for_window [app_id="(?i)waydroid"] move container to workspace app-android, workspace app-android, focus
 # AirPlay-Spiegelung (UxPlay) direkt in den Vordergrund holen
 for_window [title="(?i)uxplay"] focus
+# Offizielle Spotify-App (Connect-Ziel im Hintergrund): immer auf ihre eigene Arbeitsfläche, ohne den Fokus zu nehmen
+# Kodi öffnet sich immer auf seiner eigenen Arbeitsfläche – WangertTV zeigt es erst, wenn das Fernsehbild läuft
+for_window [app_id="(?i)^kodi$"] move container to workspace app-kodi
+for_window [app_id="(?i)^spotify$"] move container to workspace app-spotify_desktop
+for_window [class="(?i)^spotify$"] move container to workspace app-spotify_desktop
 
 # ------------------------------------------------------------------ Fernbedienung / Tastatur
 # Home-Taste (KEY_HOMEPAGE) – auch von CEC, waipu.tv- und Android-TV-Fernbedienungen

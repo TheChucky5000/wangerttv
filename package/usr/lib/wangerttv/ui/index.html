@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=1920, initial-scale=1">
   <title>WangertTV</title>
   <link rel="stylesheet" href="/assets/app.css">
+  <!-- sofort dunkel – auch bevor app.css geladen ist (kein heller oder schwarzer Blitz beim Start) -->
+  <style>html,body{background:#04080f}#boot{position:fixed;inset:0;background:#04080f url(/assets/boot-bg.png) center/cover}</style>
 </head>
 <body>
   <!-- Logo-Symbole (werden per <use> wiederverwendet) -->
@@ -40,5 +42,6 @@
   <script src="/assets/i18n.js"></script>
   <script src="/assets/icons.js"></script>
   <script src="/assets/app.js"></script>
+  <script src="/assets/tv.js"></script>
 </body>
 </html>

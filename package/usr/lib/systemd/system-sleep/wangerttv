@@ -1,0 +1,8 @@
+#!/bin/sh
+# WangertTV: nach dem Aufwachen aus dem Ruhezustand Bild und Fernseher wieder einschalten
+case "$1" in
+    post)
+        ( sleep 2; /usr/lib/wangerttv/bin/wtvctl resume >/dev/null 2>&1 ) &
+        ;;
+esac
+exit 0

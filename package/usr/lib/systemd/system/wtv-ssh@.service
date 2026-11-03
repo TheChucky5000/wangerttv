@@ -1,0 +1,6 @@
+[Unit]
+Description=WangertTV SSH-Zugang (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-ssh %i

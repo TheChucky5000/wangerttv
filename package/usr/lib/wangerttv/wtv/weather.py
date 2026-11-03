@@ -1,13 +1,26 @@
 """Wetter über Open-Meteo (kostenlos, ohne API-Schlüssel)."""
+import os
 import threading
 import time
 import urllib.parse
 
 from . import config, mock
+from .config import atomic_write_json, read_json
 from .util import http_get_json, log
 
 _cache = {"key": None, "ts": 0, "data": None}
 _lock = threading.Lock()
+DISK = os.path.join(config.CACHE_DIR, "weather.json")
+STALE_OK = 6 * 3600        # ohne Internet (z. B. direkt nach dem Start) bis zu 6 h altes Wetter weiter zeigen
+
+
+def _disk_load():
+    d = read_json(DISK, {}) or {}
+    if d.get("data") and d.get("key"):
+        _cache.update(key=tuple(d["key"]), ts=d.get("ts", 0), data=d["data"])
+
+
+_disk_load()
 
 
 def _geocode(city, lang):
@@ -57,7 +70,14 @@ def get(city, lang="de"):
                 "code": cur.get("weather_code", 0), "is_day": cur.get("is_day", 1), "daily": days}
     except Exception as exc:  # noqa: BLE001
         log.info("Wetter nicht verfügbar: %s", exc)
+        with _lock:
+            if _cache["key"] == key and _cache["data"] and time.time() - _cache["ts"] < STALE_OK:
+                return {**_cache["data"], "stale": True}      # letzter Stand, bis das Internet wieder da ist
         return {"ok": False, "message": "offline"}
     with _lock:
         _cache.update(key=key, ts=time.time(), data=data)
+    try:
+        atomic_write_json(DISK, {"key": list(key), "ts": _cache["ts"], "data": data})
+    except OSError:
+        pass
     return data

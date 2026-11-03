@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#06101e">
+<title>WangertTV – Web-Oberfläche</title>
+<style>
+:root{
+  --bg:#06101e;--panel:#0c1a2e;--card:#11223a;--card2:#152a47;--line:#1f3758;--text:#e8f1ff;--muted:#8ea7c7;
+  --accent:#22c3ff;--accent2:#0a6fd6;--ok:#2fd98b;--warn:#ffb84d;--bad:#ff5d73;--r:16px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 Inter,"Segoe UI",system-ui,-apple-system,sans-serif}
+a{color:var(--accent)}
+button,input,select{font:inherit;color:inherit}
+.hidden{display:none!important}
+
+/* ---------- Anmeldung */
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+  background:radial-gradient(1200px 600px at 20% -10%,#123a6b 0%,transparent 60%),var(--bg)}
+.login-card{width:min(420px,100%);background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:34px 30px;
+  box-shadow:0 30px 80px rgba(0,0,0,.45)}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:20px;letter-spacing:.2px}
+.logo{width:38px;height:38px;border-radius:11px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:grid;place-items:center;font-weight:800;color:#04101f}
+.login-card p{color:var(--muted);margin:14px 0 22px}
+.pin{width:100%;font-size:30px;letter-spacing:12px;text-align:center;padding:14px;border-radius:14px;
+  background:#081427;border:1px solid var(--line);outline:none}
+.pin:focus{border-color:var(--accent)}
+.err{color:var(--bad);min-height:22px;margin-top:10px;font-size:14px}
+
+/* ---------- Grundgerüst */
+#app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:22px 14px;position:sticky;top:0;height:100vh;overflow:auto}
+aside .brand{padding:4px 10px 18px}
+nav button{display:flex;align-items:center;gap:12px;width:100%;padding:11px 12px;margin:2px 0;border:0;border-radius:12px;
+  background:transparent;color:var(--muted);cursor:pointer;text-align:left;font-weight:500}
+nav button:hover{background:var(--card);color:var(--text)}
+nav button.active{background:linear-gradient(90deg,rgba(34,195,255,.18),rgba(34,195,255,.04));color:var(--text)}
+nav svg{width:19px;height:19px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+aside .foot{margin-top:18px;padding:12px;color:var(--muted);font-size:13px;border-top:1px solid var(--line)}
+main{padding:30px clamp(16px,4vw,48px) 60px;max-width:1100px;width:100%}
+h1{font-size:26px;margin:0 0 4px}
+.lead{color:var(--muted);margin:0 0 22px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted);margin:28px 0 10px;font-weight:600}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:6px 18px}
+.row{display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:0}
+.row .t{flex:1;min-width:0}
+.row .t b{display:block;font-weight:600}
+.row .t span{display:block;color:var(--muted);font-size:13.5px}
+.row .ctl{flex:none;display:flex;gap:8px;align-items:center}
+input[type=text],input[type=password],input[type=url],input[type=number],select{background:#081427;border:1px solid var(--line);
+  border-radius:11px;padding:9px 12px;min-width:220px;outline:none}
+input:focus,select:focus{border-color:var(--accent)}
+.wide input{min-width:min(420px,60vw)}
+.btn{border:1px solid var(--line);background:var(--card2);border-radius:11px;padding:9px 16px;cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));border:0;color:#03101f}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:6px 11px;font-size:13px}
+.btn:disabled{opacity:.5;cursor:default}
+.switch{position:relative;width:48px;height:28px;flex:none;cursor:pointer}
+.switch input{opacity:0;width:0;height:0}
+.switch i{position:absolute;inset:0;background:#24395a;border-radius:99px;transition:.2s}
+.switch i:after{content:"";position:absolute;left:4px;top:4px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.2s}
+.switch input:checked+i{background:var(--accent2)}
+.switch input:checked+i:after{transform:translateX(20px)}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
+.stat .k{color:var(--muted);font-size:13px}
+.stat .v{font-size:19px;font-weight:650;margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;font-size:12.5px;font-weight:600;background:#1b2f4d;color:var(--muted)}
+.pill.ok{background:rgba(47,217,139,.14);color:var(--ok)}
+.pill.warn{background:rgba(255,184,77,.14);color:var(--warn)}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
+.applist .row{gap:12px}
+.chlogo{width:72px;height:40px;flex:none;object-fit:contain;display:grid;place-items:center;font-size:11px;color:var(--muted)}
+.qb{display:inline-block;font-style:normal;padding:0 7px;border-radius:6px;font-size:11px;font-weight:800;background:#1d6fe0;color:#fff;margin-left:6px;vertical-align:1px}
+.qb.uhd{background:linear-gradient(135deg,#f5c542,#c8921c);color:#241600}
+.chrow.off{opacity:.45}
+.chnum{width:34px;text-align:right;color:var(--muted);font-weight:700;flex:none}
+.epgtbl{width:100%;border-collapse:collapse}
+.epgtbl td{padding:9px 8px;border-top:1px solid var(--line);vertical-align:middle}
+.epgtbl tr:first-child td{border-top:0}
+.epgtbl .time{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}
+.tabs2{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px}
+.tabs2 .btn.on{background:var(--accent);color:#04101f;border-color:var(--accent)}
+.picks{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
+.picks span{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:6px 12px}
+.appicon{width:44px;height:44px;border-radius:11px;flex:none;object-fit:cover;background:var(--card2);display:grid;place-items:center;font-weight:700}
+.meter{height:8px;background:#1b2f4d;border-radius:99px;overflow:hidden;margin-top:8px}
+.meter i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.note{background:rgba(34,195,255,.08);border:1px solid rgba(34,195,255,.3);border-radius:14px;padding:12px 16px;color:#cfe9ff;margin:12px 0}
+.note.warn{background:rgba(255,184,77,.08);border-color:rgba(255,184,77,.35);color:#ffe2b5}
+.qr{background:#fff;border-radius:14px;padding:12px;width:190px;height:190px;flex:none}
+.qr svg{width:100%;height:100%}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(30px);opacity:0;background:#0f2643;border:1px solid var(--accent);
+  padding:11px 20px;border-radius:99px;transition:.25s;pointer-events:none;font-weight:600;z-index:10}
+#toast.show{opacity:1;transform:translateX(-50%)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+@media (max-width:820px){
+  #app{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line)}
+  nav{display:flex;overflow-x:auto;gap:4px}
+  nav button{width:auto;white-space:nowrap}
+  aside .foot{display:none}
+  .grid{grid-template-columns:1fr 1fr;gap:10px}
+  .stat .v{font-size:16px}
+  .row{flex-wrap:wrap}
+  .row .ctl{width:100%;justify-content:flex-end}
+  input[type=text],input[type=password],input[type=url],select{min-width:0;flex:1}
+}
+</style>
+</head>
+<body>
+
+<section id="login" class="hidden">
+  <form class="login-card" id="loginForm" autocomplete="off">
+    <div class="brand"><div class="logo">W</div>WangertTV</div>
+    <p>Gib die 6-stellige PIN ein. Du findest sie am Fernseher unter <b>Einstellungen → Gerät → Web-Oberfläche</b>.</p>
+    <input class="pin" id="pin" inputmode="numeric" maxlength="6" placeholder="••••••" autofocus>
+    <div class="err" id="loginErr"></div>
+    <button class="btn primary" style="width:100%;margin-top:8px;padding:13px">Anmelden</button>
+  </form>
+</section>
+
+<div id="app" class="hidden">
+  <aside>
+    <div class="brand"><div class="logo">W</div><span id="devName">WangertTV</span></div>
+    <nav id="nav"></nav>
+    <div class="foot"><div id="footVer"></div><a href="#" id="logout">Abmelden</a></div>
+  </aside>
+  <main id="main"></main>
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const S = { state: null, apps: null, page: "overview", timer: null };
+
+const ICONS = {
+  overview: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  livetv: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 3l4 3 4-3"/>',
+  apps: '<circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/><circle cx="7" cy="17" r="3"/><circle cx="17" cy="17" r="3"/>',
+  sound: '<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>',
+  device: '<rect x="2.5" y="7" width="19" height="10" rx="2"/><path d="M7 12h.01M11 12h6"/>',
+  ambient: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-9 9"/>',
+  updates: '<path d="M20 11a8 8 0 0 0-14.3-4.6L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.6L20 16M20 20v-4h-4"/>',
+  tv: '<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M8 2.5l4 3.5 4-3.5"/>',
+  foryou: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
+  radio: '<rect x="3" y="8" width="18" height="12" rx="2.5"/><path d="M7 8l10-5"/><circle cx="15.5" cy="14" r="2.5"/><path d="M6.5 12.5h4M6.5 15.5h4"/>',
+  remote: '<rect x="7" y="2.5" width="10" height="19" rx="3.5"/><circle cx="12" cy="8" r="2"/><path d="M10 13h.01M14 13h.01M10 16.5h.01M14 16.5h.01"/>',
+};
+const PAGES = [
+  ["overview", "Übersicht"], ["livetv", "TV-Empfang"], ["tv", "Fernsehen & Sender"], ["foryou", "Für dich"], ["radio", "Radio"], ["apps", "Apps"], ["sound", "Bild & Ton"],
+  ["device", "Gerät & Bedienung"], ["ambient", "Bildschirmschoner"], ["updates", "Updates"], ["remote", "Handy-Fernbedienung"],
+];
+const THEMES = [["wangert", "WangertTV (Cyan & Tiefblau)"], ["oled", "OLED-Schwarz"], ["aurora", "Polarlicht"],
+  ["sunset", "Sonnenuntergang"], ["neon", "Neon"], ["graphite", "Graphit"]];
+const FORMATS = { ac3: "Dolby Digital", eac3: "Dolby Digital Plus", dts: "DTS", truehd: "Dolby TrueHD (Atmos)", dtshd: "DTS-HD MA (DTS:X)", aac: "AAC" };
+
+/* ------------------------------------------------------------------ Verbindung zur Box */
+async function call(path, body) {
+  const opts = { headers: { "X-WTV-Admin": "1" }, credentials: "same-origin" };
+  if (body !== undefined) { opts.method = "POST"; opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  const res = await fetch("/admin/api" + path, opts);
+  if (res.status === 401) { showLogin(); throw new Error("login"); }
+  return res.json();
+}
+async function save(patch, msg = "Gespeichert") {
+  const res = await call("/settings", patch);
+  if (res.settings) S.state.settings = res.settings;
+  toast(msg);
+  return res;
+}
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+/* ------------------------------------------------------------------ Anmeldung */
+function showLogin() {
+  $("#app").classList.add("hidden"); $("#login").classList.remove("hidden"); $("#pin").focus();
+  clearInterval(S.timer);
+}
+$("#loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const pin = $("#pin").value.trim();
+  const res = await fetch("/admin/login", { method: "POST", headers: { "Content-Type": "application/json", "X-WTV-Admin": "1" },
+    body: JSON.stringify({ pin }), credentials: "same-origin" });
+  if (res.ok) { $("#pin").value = ""; $("#loginErr").textContent = ""; start(); return; }
+  const data = await res.json().catch(() => ({}));
+  $("#loginErr").textContent = data.error === "locked" ? "Zu viele Versuche – bitte 5 Minuten warten." : "Die PIN stimmt nicht.";
+  $("#pin").select();
+});
+$("#logout").addEventListener("click", async (e) => {
+  e.preventDefault();
+  await fetch("/admin/logout", { method: "POST", headers: { "X-WTV-Admin": "1", "Content-Type": "application/json" }, body: "{}" });
+  showLogin();
+});
+
+/* ------------------------------------------------------------------ Bausteine */
+const row = (title, sub, ctl, cls = "") => `<div class="row ${cls}"><div class="t"><b>${title}</b>${sub ? `<span>${sub}</span>` : ""}</div><div class="ctl">${ctl}</div></div>`;
+const toggle = (key, on) => `<label class="switch"><input type="checkbox" data-toggle="${key}" ${on ? "checked" : ""}><i></i></label>`;
+const select = (key, cur, opts) => `<select data-select="${key}">${opts.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(cur) ? "selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+function get(path) { return path.split(".").reduce((o, k) => (o == null ? o : o[k]), S.state.settings); }
+function patchFor(path, value) {
+  const keys = path.split("."); const patch = {}; let node = patch;
+  keys.slice(0, -1).forEach((k) => { node[k] = {}; node = node[k]; });
+  node[keys[keys.length - 1]] = value;
+  return patch;
+}
+function fmtBytes(n) { if (!n) return "–"; const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0; while (n >= 1024 && i < 4) { n /= 1024; i++; } return `${n.toFixed(i > 2 ? 1 : 0)} ${u[i]}`; }
+function fmtTime(ts) { return ts ? new Date(ts * 1000).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : "noch nie"; }
+function fmtUptime(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d} T ${h} Std` : h ? `${h} Std ${m} Min` : `${m} Min`; }
+
+/* ------------------------------------------------------------------ Seiten */
+const Pages = {};
+
+Pages.overview = async () => {
+  const [sys, upd, apps, audio] = await Promise.all([call("/sysinfo"), call("/updates"), call("/apps"), call("/audio")]);
+  S.apps = apps;
+  const st = S.state;
+  const np = st.nowplaying || {};
+  let h = `<h1>Übersicht</h1><p class="lead">${esc(st.settings.device_name)} · WangertTV ${esc(st.version)}</p>`;
+  h += `<div class="grid">
+    <div class="stat"><div class="k">Zustand</div><div class="v">${st.standby ? '<span class="pill warn">Standby</span>' : '<span class="pill ok">Eingeschaltet</span>'}</div></div>
+    <div class="stat"><div class="k">IP-Adresse</div><div class="v mono">${esc(sys.ip || "–")}</div></div>
+    <div class="stat"><div class="k">Läuft seit</div><div class="v">${fmtUptime(sys.uptime || 0)}</div></div>
+    <div class="stat"><div class="k">Updates</div><div class="v">${upd.total ? `<span class="pill warn">${upd.total} verfügbar</span>` : '<span class="pill ok">Aktuell</span>'}</div></div>
+    <div class="stat"><div class="k">Arbeitsspeicher</div><div class="v">${fmtBytes(sys.mem_used)} / ${fmtBytes(sys.mem_total)}</div>
+      <div class="meter"><i style="width:${sys.mem_total ? Math.round(sys.mem_used / sys.mem_total * 100) : 0}%"></i></div></div>
+    <div class="stat"><div class="k">Speicherplatz</div><div class="v">${fmtBytes(sys.disk_used)} / ${fmtBytes(sys.disk_total)}</div>
+      <div class="meter"><i style="width:${sys.disk_total ? Math.round(sys.disk_used / sys.disk_total * 100) : 0}%"></i></div></div>
+  </div>`;
+  if (np.title) {
+    // Quelle richtig benennen: Radio, Spotify (Connect oder App), AirPlay …
+    const src = np.source === "radio" ? "📻 Radio" : np.source === "spotify" ? (np.via === "spotify_app" ? "🎵 Spotify-App" : "🎵 Spotify Connect")
+      : np.source === "airplay" ? "📱 AirPlay" : "🎵 Wiedergabe";
+    h += `<div class="note">${src}${np.playing === false ? " (pausiert)" : ""}: <b>${esc(np.title)}</b>${np.artist ? ` – ${esc(np.artist)}` : ""}
+      ${np.source === "radio" ? ' <button class="btn" data-act="radio-stop" style="margin-left:12px">Radio aus</button>' : ""}</div>`;
+  }
+  h += `<h2>Schnellaktionen</h2><div class="actions">
+    <button class="btn" data-act="home">Startseite am TV</button>
+    ${st.standby ? '<button class="btn primary" data-act="power" data-v="wake">Aufwecken</button>' : '<button class="btn" data-act="power" data-v="standby">Standby</button>'}
+    <button class="btn" data-act="power" data-v="reboot" data-confirm="Box jetzt neu starten?">Neu starten</button>
+    <button class="btn danger" data-act="power" data-v="poweroff" data-confirm="Box ausschalten? Einschalten danach nur am Gerät.">Ausschalten</button>
+    <button class="btn" data-act="speedtest">Internet-Geschwindigkeit testen</button>
+    <button class="btn" data-act="diag">Diagnose herunterladen</button>
+  </div>
+  <p class="lead" style="margin-top:8px">„Diagnose herunterladen“ sammelt Protokolle für die Fehlersuche in einer Textdatei – ohne Passwörter.</p>`;
+  h += `<h2>Laufende Apps</h2><div class="card">${apps.running.length ? apps.running.map((a) => row(esc(a.name), "läuft", `<button class="btn sm" data-act="close" data-v="${esc(a.key)}">Beenden</button>`)).join("") : row("Keine App geöffnet", "", "")}</div>`;
+  const rc = audio.receiver;
+  h += `<h2>Gerät</h2><div class="card">
+    ${row("Prozessor", esc(sys.cpu || "–"), "")}${row("Grafik", esc(sys.gpu || "–"), "")}
+    ${row("Receiver / Fernseher", rc ? esc(`${rc.name || "HDMI"} · ${rc.pcm_channels}-Kanal-PCM${rc.formats.length ? " · " + rc.formats.map((f) => FORMATS[f] || f).join(", ") : ""}`) : "Kein Gerät meldet sich über HDMI", "")}
+    ${row("Versionen", esc(`WangertTV ${sys.version} · Debian ${sys.debian} · Kodi ${sys.kodi || "–"} · Chrome ${sys.chrome || "–"}`), "")}
+  </div>`;
+  return h;
+};
+
+Pages.livetv = async () => {
+  const s = S.state.settings;
+  const ch = await call("/channels").catch(() => ({ channels: [] }));
+  let h = `<h1>Live-TV</h1><p class="lead">Fernsehen in Kodi über waipu.tv oder eine IPTV-Senderliste.</p>`;
+  h += `<div class="card">${row("Quelle", "Was „Live-TV“ auf der Startseite öffnet", select("livetv_source", s.livetv_source, [["waipu", "waipu.tv / O2 TV"], ["iptv", "IPTV-Senderliste (M3U)"]]))}</div>`;
+  h += `<h2>waipu.tv</h2><form class="card" id="waipuForm">
+    ${row("Anbieter", "", `<select name="provider">${[[0, "waipu.tv"], [1, "O2 TV"]].map(([v, l]) => `<option value="${v}" ${Number(s.waipu.provider) === v ? "selected" : ""}>${l}</option>`).join("")}</select>`)}
+    ${row("E-Mail / Benutzername", "", `<input type="text" name="username" value="${esc(s.waipu.username)}" autocomplete="off">`)}
+    ${row("Passwort", s.waipu.has_password ? "Gespeichert – nur ausfüllen, um es zu ändern" : "", `<input type="password" name="password" placeholder="${s.waipu.has_password ? "••••••••" : ""}" autocomplete="new-password">`)}
+    ${row("", "", '<button class="btn primary">waipu.tv speichern</button>')}
+  </form>`;
+  h += `<h2>IPTV-Senderliste</h2><form class="card wide" id="iptvForm">
+    ${row("M3U-Adresse", "Link zur Senderliste deines Anbieters", `<input type="url" name="m3u" value="${esc(s.iptv.m3u)}" placeholder="https://…/playlist.m3u">`)}
+    ${row("EPG-Adresse (XMLTV)", "Programmführer, optional", `<input type="url" name="epg" value="${esc(s.iptv.epg)}" placeholder="https://…/epg.xml.gz">`)}
+    ${row("Aktualisieren alle", "Stunden", `<input type="number" name="refresh_hours" min="1" max="168" value="${esc(s.iptv.refresh_hours)}" style="min-width:90px">`)}
+    ${row("", "", '<button type="button" class="btn" id="iptvTest">Liste testen</button><button class="btn primary">IPTV speichern</button>')}
+  </form>`;
+  h += `<h2>Sender</h2><div class="card">${row(`${(ch.channels || []).length} Sender geladen`, (ch.channels || []).slice(0, 12).map((c) => esc(c.name)).join(" · ") || "Noch keine Senderliste", '<button class="btn" data-act="refresh-channels">Neu laden</button>')}</div>`;
+  return h;
+};
+
+Pages.apps = async () => {
+  const apps = S.apps = await call("/apps");
+  const s = S.state.settings;
+  const homeIds = s.apps || [];
+  const icon = (a) => a.icon ? `<img class="appicon" src="/admin/appicon/${encodeURIComponent(a.id)}" alt="">` : `<div class="appicon" style="background:${esc(a.color)}">${esc((a.name || "?")[0])}</div>`;
+  let h = `<h1>Apps</h1><p class="lead">Reihenfolge der Startseite festlegen und Apps direkt auf dem Fernseher öffnen.</p>`;
+  h += `<h2>Startseite</h2><div class="card applist">${apps.home.map((a, i) => `<div class="row">${icon(a)}<div class="t"><b>${esc(a.name)}</b><span>${esc((a.desc || {}).de || "")}</span></div>
+      <div class="ctl"><button class="btn sm" data-act="launch" data-v="${esc(a.id)}">Am TV öffnen</button>
+      <button class="btn sm" data-act="move" data-v="${i}" data-d="-1" ${i === 0 ? "disabled" : ""} title="nach vorne">▲</button>
+      <button class="btn sm" data-act="move" data-v="${i}" data-d="1" ${i === apps.home.length - 1 ? "disabled" : ""} title="nach hinten">▼</button>
+      <button class="btn sm danger" data-act="remove" data-v="${esc(a.id)}">Entfernen</button></div></div>`).join("")}</div>`;
+  const more = apps.all.filter((a) => !homeIds.includes(a.id));
+  h += `<h2>Weitere Apps</h2><div class="card applist">${more.map((a) => `<div class="row">${icon(a)}<div class="t"><b>${esc(a.name)}</b><span>${esc((a.desc || {}).de || "")}</span></div>
+      <div class="ctl">${a.installable ? `<button class="btn sm" data-act="install" data-v="${esc(a.id)}">Installieren</button>` : `<button class="btn sm" data-act="launch" data-v="${esc(a.id)}">Am TV öffnen</button>`}
+      <button class="btn sm primary" data-act="add" data-v="${esc(a.id)}">Zur Startseite</button></div></div>`).join("") || row("Alle Apps sind schon auf der Startseite", "", "")}</div>`;
+  h += `<h2>Web-Apps</h2><div class="card">${row("Mit Fernbedienung bedienen", "Netflix, Spotify, Prime Video …: Pfeiltasten wählen, OK öffnet die Bildschirmtastatur", toggle("tvnav", s.tvnav !== false))}</div>`;
+  return h;
+};
+
+Pages.sound = async () => {
+  const [audio, disp] = await Promise.all([call("/audio"), call("/display")]);
+  const s = S.state.settings;
+  const rc = audio.receiver;
+  const out = (disp.outputs || [])[0];
+  let h = `<h1>Bild & Ton</h1><p class="lead">Tonausgabe, Lautsprecher und Dolby/DTS-Durchreichen.</p>`;
+  if (rc) {
+    const recommended = (s.audio.speakers || "2.0") === rc.layout && !!s.kodi.passthrough === !!rc.passthrough;
+    h += `<div class="note"><b>${esc(rc.name || "HDMI-Gerät")}</b> erkannt: ${rc.pcm_channels}-Kanal-PCM${rc.formats.length ? ", " + rc.formats.map((f) => FORMATS[f] || f).join(", ") : ""}.
+      ${recommended ? "Die Einstellungen passen bereits." : `<button class="btn sm primary" data-act="receiver-apply" style="margin-left:8px">Passend einstellen (${esc(rc.layout)}${rc.passthrough ? " + Durchreichen" : ""})</button>`}</div>`;
+  } else {
+    h += `<div class="note warn">Über HDMI meldet sich kein Gerät mit Tonformaten – ist der Fernseher bzw. Receiver eingeschaltet?</div>`;
+  }
+  h += `<h2>Ton</h2><div class="card">
+    ${row("Tonausgabe", "", `<select id="sink">${audio.sinks.map((x) => `<option value="${esc(x.name)}" ${x.name === audio.default ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select>`)}
+    ${row("Lautstärke", `<span id="volVal">${audio.volume}%</span>`, `<input type="range" id="vol" min="0" max="100" step="5" value="${audio.volume}" style="width:220px">`)}
+    ${row("Lautsprecher", "Anzahl der Kanäle am Receiver", select("audio.speakers", s.audio.speakers || "2.0", [["2.0", "Stereo 2.0"], ["5.1", "Surround 5.1"], ["7.1", "Surround 7.1"]]))}
+    ${(s.audio.speakers || "2.0") !== "2.0" ? row("Raumklang-Modus", "Automatisch: Stereo bleibt 2.0, 5.1 kommt als Dolby Digital/DTS (Receiver schaltet selbst um). Immer Mehrkanal: HDMI immer mit allen Kanälen", select("audio.pcm_mode", s.audio.pcm_mode === "multi" ? "multi" : "auto", [["auto", "Automatisch (empfohlen)"], ["multi", "Immer Mehrkanal"]])) : ""}
+    ${(s.audio.speakers || "2.0") !== "2.0" && s.audio.pcm_mode === "multi" ? row("Stereo auf alle Lautsprecher", "YouTube, Netflix, Spotify liefern nur Stereo – WangertTV verteilt es auf alle Lautsprecher", toggle("audio.upmix", s.audio.upmix !== false)) : ""}
+    ${row("Dolby/DTS durchreichen", "Kodi gibt Dolby Digital und DTS unverändert an den Receiver", toggle("kodi.passthrough", s.kodi.passthrough))}
+    ${s.kodi.passthrough ? row("Auch Dolby Digital Plus, TrueHD & DTS-HD", "Nur einschalten, wenn der Ton dabei stabil bleibt (sonst wandelt Kodi in mehrkanaliges PCM um)", toggle("kodi.hd_passthrough", !!s.kodi.hd_passthrough)) : ""}
+    ${row("Ton testen", "Spielt einen kurzen Klang auf dem Fernseher", '<button class="btn" data-act="audio-test">Abspielen</button>')}
+  </div>`;
+  h += `<h2>Bild</h2><div class="card">${row("Bildschirm", out ? esc(`${out.label || out.name} · ${out.current.width}×${out.current.height} @ ${out.current.refresh} Hz`) : "Kein Bildschirm erkannt", "")}
+    ${row("Auflösung", "", select("display.mode", s.display.mode, [["auto", "Automatisch"], ...((out && out.modes) || []).map((m) => [`${m.width}x${m.height}@${m.refresh}`, `${m.width} × ${m.height} · ${m.refresh} Hz`])]))}</div>`;
+  return h;
+};
+
+Pages.device = async () => {
+  const s = S.state.settings;
+  const zones = (await call("/timezones").catch(() => ({ zones: [] }))).zones || [];
+  const ssh = await call("/ssh").catch(() => ({}));
+  let h = `<h1>Gerät & Bedienung</h1><p class="lead">Name, Sprache, Design und was die Tasten der Fernbedienung tun.</p>`;
+  h += `<h2>Allgemein</h2><form class="card" id="nameForm">
+    ${row("Gerätename", "So heißt die Box in Netflix, Spotify Connect, AirPlay und Bluetooth", `<input type="text" name="device_name" value="${esc(s.device_name)}" maxlength="40"><button class="btn primary">Speichern</button>`)}
+  </form><div class="card" style="margin-top:12px">
+    ${row("Sprache", "", select("lang", s.lang, [["de", "Deutsch"], ["en", "English"]]))}
+    ${row("Design", "Farben der Oberfläche", select("theme", s.theme, THEMES))}
+    ${row("Zeitzone", "", select("timezone", s.timezone, (zones.length ? zones : [s.timezone]).map((z) => [z, z.replace(/_/g, " ")])))}
+    ${row("Leistung", "Wie schnell, leise und sparsam die Box arbeitet", select("box.power_profile", (s.box || {}).power_profile || "balanced", [["balanced", "Ausgewogen (empfohlen)"], ["performance", "Maximale Leistung"], ["quiet", "Leise & sparsam"]]))}
+    ${row("Beim Einschalten", "Was nach dem Standby zu sehen ist", select("box.wake_to", (s.box || {}).wake_to || "home", [["home", "Startseite"], ["tv", "Fernsehen (letzter Sender)"]]))}
+  </div><form class="card" id="cityForm" style="margin-top:12px">
+    ${row("Ort für das Wetter", "Stadt, z. B. Berlin", `<input type="text" name="city" value="${esc(s.city)}"><button class="btn primary">Speichern</button>`)}
+  </form>`;
+  h += `<h2>Ein/Aus</h2><div class="card">
+    ${row("Aus-Taste der Fernbedienung", "", select("power_key", s.power_key, [["standby", "Standby (Box läuft leise weiter)"], ["suspend", "Ruhezustand (Box schläft)"], ["menu", "Menü anzeigen"]]))}
+    ${row("Sleep-Timer beendet mit", "", select("sleep_action", s.sleep_action, [["standby", "Standby"], ["poweroff", "Ausschalten"]]))}
+    ${row("Automatischer Standby", "Nach so vielen Stunden ohne Tastendruck (wie beim Fernseher)", select("auto_standby_hours", s.auto_standby_hours || 0, [[0, "Aus"], [2, "nach 2 Stunden"], [3, "nach 3 Stunden"], [4, "nach 4 Stunden"], [6, "nach 6 Stunden"], [8, "nach 8 Stunden"]]))}
+  </div>`;
+  h += `<h2>SSH-Zugang</h2><div class="card">
+    ${row(ssh.enabled ? `SSH ist an – <span class="mono">${esc(ssh.command)}</span>` : "SSH ist aus",
+      ssh.enabled ? "Benutzer „tv“. Das Passwort steht am Fernseher unter Einstellungen → Gerät → SSH-Zugang." : "Beim Einschalten erzeugt die Box ein zufälliges Passwort und zeigt es am Fernseher an.",
+      ssh.enabled ? '<button class="btn" data-act="ssh" data-v="renew" data-confirm="Neues Passwort erzeugen? Es erscheint am Fernseher.">Neues Passwort</button><button class="btn danger" data-act="ssh" data-v="off">Ausschalten</button>'
+                  : '<button class="btn primary" data-act="ssh" data-v="on">Einschalten</button>')}
+  </div>`;
+  h += `<h2>HDMI-CEC</h2><div class="card">
+    ${row("Fernseher mit einschalten", "Box an → Fernseher und Receiver an", toggle("cec.tv_on_with_box", s.cec.tv_on_with_box))}
+    ${row("Standby mit dem Fernseher", "Fernseher aus → Box geht in Standby", toggle("cec.standby_with_tv", s.cec.standby_with_tv))}
+    ${row("Fernseher mit ausschalten", "Box-Standby → Fernseher und Receiver aus", toggle("cec.tv_off_on_standby", s.cec.tv_off_on_standby))}
+    ${row("HDMI-Eingang", "", select("cec.hdmi_port", s.cec.hdmi_port, [[0, "Automatisch"], [1, "HDMI 1"], [2, "HDMI 2"], [3, "HDMI 3"], [4, "HDMI 4"]]))}
+  </div><p class="lead" style="margin-top:8px;font-size:13.5px">CEC braucht beim Geekom einen Pulse-Eight USB-CEC-Adapter.</p>`;
+  h += `<h2>Streaming-Empfang</h2><div class="card">
+    ${row("AirPlay", "iPhone/iPad/Mac auf den Fernseher spiegeln", toggle("airplay", s.airplay))}
+    ${row("Spotify Connect", "Box als Lautsprecher in der Spotify-App", toggle("spotify_connect", s.spotify_connect))}
+  </div>`;
+  return h;
+};
+
+Pages.ambient = async () => {
+  const a = S.state.settings.ambient;
+  let h = `<h1>Bildschirmschoner</h1><p class="lead">Uhr, Wetter und Bilder, wenn eine Weile nichts passiert.</p><div class="card">
+    ${row("Bildschirmschoner", "", toggle("ambient.enabled", a.enabled))}
+    ${row("Starten nach", "", select("ambient.minutes", a.minutes, [[2, "2 Minuten"], [5, "5 Minuten"], [10, "10 Minuten"], [15, "15 Minuten"], [30, "30 Minuten"]]))}
+    ${row("Bilder", "", select("ambient.source", a.source, [["art", "Eingebaute Kunst"], ["picsum", "Fotos aus dem Internet"], ["folder", "Eigener Ordner"]]))}
+    ${row("Wetter anzeigen", "", toggle("ambient.show_weather", a.show_weather))}
+    ${row("Bildschirm danach aus", "Spart Strom", select("ambient.display_off_hours", a.display_off_hours, [[0, "Nie"], [1, "nach 1 Stunde"], [2, "nach 2 Stunden"], [3, "nach 3 Stunden"], [6, "nach 6 Stunden"]]))}
+  </div>`;
+  return h;
+};
+
+Pages.updates = async () => {
+  const u = await call("/updates");
+  const s = S.state.settings;
+  const busy = u.state === "running" || u.state === "checking";
+  let h = `<h1>Updates</h1><p class="lead">System, Kodi, Chrome, Apps, Android und WangertTV selbst.</p>`;
+  if (busy) h += `<div class="card" style="padding:18px"><b>${u.state === "checking" ? "Suche nach Updates …" : `Wird aktualisiert … ${u.progress}%`}</b><div class="meter"><i style="width:${u.progress}%"></i></div><span style="color:var(--muted);font-size:13.5px">${esc(u.message)}</span></div>`;
+  if (u.state === "error") h += `<div class="note warn">Fehler: ${esc(u.message)}</div>`;
+  if (u.reboot_required && !busy) h += `<div class="note warn">Ein Neustart ist nötig, damit alles aktiv wird. <button class="btn sm" data-act="power" data-v="reboot" data-confirm="Box jetzt neu starten?" style="margin-left:8px">Jetzt neu starten</button></div>`;
+  h += `<div class="card" style="margin-top:12px">
+    ${row(u.total ? `${u.total} Updates verfügbar` : "Alles aktuell", `Zuletzt gesucht: ${fmtTime(u.last_check)} · zuletzt aktualisiert: ${fmtTime(u.last_update)}`,
+      `<button class="btn" data-act="upd-check" ${busy ? "disabled" : ""}>Suchen</button><button class="btn primary" data-act="upd-run" ${busy ? "disabled" : ""}>Alles aktualisieren</button>`)}
+    ${u.packages && u.packages.length ? row("Pakete", esc(u.packages.slice(0, 30).join(", ")) + (u.packages.length > 30 ? " …" : ""), "") : ""}
+    ${row("Automatische Updates", "Jede Nacht um 4 Uhr; Neustart nur im Standby", toggle("autoupdate.enabled", s.autoupdate.enabled))}
+  </div><form class="card wide" id="repoForm" style="margin-top:12px">
+    ${row("WangertTV-Updates (GitHub)", "benutzer/repository – leer = Vorgabe aus der Installation", `<input type="text" name="update_repo" value="${esc(s.update_repo || "")}" placeholder="${esc(u.repo || "benutzer/wangerttv")}"><button class="btn primary">Speichern</button>`)}
+  </form>`;
+  return h;
+};
+
+Pages.remote = async () => {
+  const r = await call("/phoneremote");
+  return `<h1>Handy-Fernbedienung</h1><p class="lead">Steuerkreuz, Lautstärke und Texteingabe – auch hier am PC nutzbar.</p>
+    <div class="card" style="padding:20px;display:flex;gap:26px;align-items:center;flex-wrap:wrap">
+      <div class="qr">${r.qr || ""}</div>
+      <div style="flex:1;min-width:240px"><p style="margin-top:0">Mit der Handy-Kamera scannen oder den Link öffnen. Tipp: Auf dem Handy zum Startbildschirm hinzufügen.</p>
+        <p class="mono" style="word-break:break-all">${esc(r.url)}</p>
+        <div class="actions"><a class="btn primary" href="${esc(r.url)}" target="_blank" rel="noopener">Fernbedienung öffnen</a>
+        <button class="btn" data-act="remote-renew" data-confirm="Neuen Code erstellen? Gespeicherte Links funktionieren danach nicht mehr.">Neuen Code erstellen</button></div></div>
+    </div>`;
+};
+
+const qb = (q) => q ? `<i class="qb${q === "UHD" ? " uhd" : ""}">${esc(q)}</i>` : "";
+const chlogo = (c) => c.logo && c.logo.startsWith("/chlogo/") ? `<img class="chlogo" src="/admin${esc(c.logo)}" alt="">`
+  : `<span class="chlogo">${esc((c.name || "").slice(0, 10))}</span>`;
+const hm = (ts) => new Date(ts * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+function slotAt(slot) {
+  const d = new Date(); const at = (h, m, add = 0) => { const x = new Date(d); x.setDate(x.getDate() + add); x.setHours(h, m, 0, 0); return Math.floor(x / 1000); };
+  const now = Math.floor(Date.now() / 1000);
+  if (slot === "prime") return now > at(20, 15) + 7200 ? at(20, 15, 1) : at(20, 15);
+  if (slot === "late") return now > at(22, 15) + 3600 ? at(22, 15, 1) : at(22, 15);
+  if (slot === "tomorrow") return at(20, 15, 1);
+  return now;
+}
+
+/* Fernsehen & Sender: Einstellungen, Sender sortieren/ausblenden, Programm, Erinnerungen */
+Pages.tv = async () => {
+  const s = S.state.settings, tv = s.tv || {};
+  const [all, sched] = await Promise.all([call("/channels/all"), call(`/schedule?at=${slotAt(S.slot || "now")}`)]);
+  S.chlist = (all.channels || []).map((c) => ({ name: c.name, logo: c.logo, quality: c.quality, hidden: !!c.hidden }));
+  let h = `<h1>Fernsehen & Sender</h1><p class="lead">Senderliste sortieren, Sender ausblenden, TV-Programm ansehen und Erinnerungen verwalten.</p>`;
+  h += `<h2>Beim Fernsehen</h2><div class="card">
+    ${row("Offizielle Senderlogos", "Einheitliche Logos statt der Logos des Anbieters", toggle("tv.logos_official", tv.logos !== "provider"))}
+    ${row("Nummern nach eigener Reihenfolge", "Für die Zifferntasten der Fernbedienung", toggle("tv.renumber", tv.renumber !== false))}
+    ${row("Info-Leiste beim Umschalten", "Sender, Sendung, Bild- (SD/HD/UHD, HDR) und Tonformat", select("tv.infobar_secs", tv.infobar_secs ?? 6, [[0, "Nur auf OK"], [3, "3 Sekunden"], [5, "5 Sekunden"], [6, "6 Sekunden"], [8, "8 Sekunden"], [12, "12 Sekunden"], [20, "20 Sekunden"]]))}
+    ${row("Live-TV startet mit", "", select("tv.start_with", tv.start_with || "last", [["last", "Letztem Sender"], ["list", "Senderliste"]]))}
+    ${row("Zurück-Taste im Fernsehbild", "", select("tv.back_to", tv.back_to || "live", [["live", "Senderliste"], ["epg", "TV-Programm"], ["home", "Startseite"]]))}
+    ${row("Automatisch erinnern", "An neue Folgen deiner Lieblingssendungen", toggle("tv.smart_reminders", !!tv.smart_reminders))}
+    ${row("Kodi-Menüs verwenden", "Kodis eigene Oberfläche statt WangertTV (für Fortgeschrittene)", toggle("tv.kodi_menus", !!tv.kodi_menus))}
+  </div>`;
+  const slots = [["now", "Jetzt"], ["prime", "20:15"], ["late", "22:15"], ["tomorrow", "Morgen 20:15"]];
+  const rems = new Set((sched.reminders || []).map((r) => `${r.name}|${r.start}`));
+  S.sched = sched.items || [];
+  h += `<h2>Was läuft?</h2><div class="tabs2">${slots.map(([k, l]) => `<button class="btn sm${(S.slot || "now") === k ? " on" : ""}" data-act="slot" data-v="${k}">${l}</button>`).join("")}</div>
+    <div class="card"><table class="epgtbl">${S.sched.map((it, i) => {
+      const live = it.start <= Date.now() / 1000 && Date.now() / 1000 < it.end;
+      return `<tr><td>${chlogo(it)}</td><td><b>${esc(it.title)}</b>${qb(it.quality)}<br><span class="time">${esc(it.name)} · ${hm(it.start)} – ${hm(it.end)}</span></td>
+        <td style="text-align:right;white-space:nowrap">${live ? `<button class="btn sm primary" data-act="tv-play" data-v="${esc(it.name)}">Am TV einschalten</button>`
+          : rems.has(`${it.name}|${it.start}`) ? '<span class="pill ok">Erinnerung gesetzt</span>'
+          : `<button class="btn sm" data-act="remind" data-v="${i}">Erinnern</button> <button class="btn sm" data-act="remind" data-v="${i}" data-auto="1">Automatisch umschalten</button>`}</td></tr>`;
+    }).join("") || `<tr><td>${"Noch kein Programm – Kodi lädt es beim ersten Start von Live-TV."}</td></tr>`}</table></div>`;
+  const reminders = sched.reminders || [];
+  h += `<h2>Erinnerungen</h2><div class="card">${reminders.map((r, i) => row(`${esc(r.title)}`, `${esc(r.name)} · ${fmtTime(r.start)}${r.auto ? " · schaltet automatisch um" : ""}${r.smart ? " · automatisch erstellt" : ""}`,
+    `<button class="btn sm danger" data-act="rem-del" data-v="${i}">Löschen</button>`)).join("") || row("Keine Erinnerungen", "Am Fernseher im TV-Programm oder hier oben setzen", "")}</div>`;
+  S.reminders = reminders;
+  const visible = S.chlist.filter((c) => !c.hidden).length;
+  h += `<h2>Sender sortieren & ausblenden</h2><p class="lead">${visible} von ${S.chlist.length} Sendern sichtbar. Änderungen gelten sofort am Fernseher und beim Umschalten.</p>
+    <div class="actions"><button class="btn" data-act="ch-sort" data-v="az">A–Z</button><button class="btn" data-act="ch-sort" data-v="hd">UHD/HD zuerst</button>
+    <button class="btn" data-act="ch-sort" data-v="favs">Favoriten zuerst</button>
+    <button class="btn danger" data-act="ch-sort" data-v="reset" data-confirm="Reihenfolge des Anbieters wiederherstellen und alle Sender einblenden?">Zurücksetzen</button></div>
+    <div class="card applist">${(() => { let n = 0; return S.chlist.map((c, i) => { if (!c.hidden) n++; return `<div class="row chrow${c.hidden ? " off" : ""}"><span class="chnum">${c.hidden ? "–" : n}</span>${chlogo(c)}
+      <div class="t"><b>${esc(c.name)}${qb(c.quality)}</b>${c.hidden ? "<span>ausgeblendet</span>" : ""}</div>
+      <div class="ctl"><button class="btn sm" data-act="tv-play" data-v="${esc(c.name)}">Am TV</button>
+      <button class="btn sm" data-act="ch-move" data-v="${i}" data-d="-1" ${i === 0 ? "disabled" : ""}>▲</button>
+      <button class="btn sm" data-act="ch-move" data-v="${i}" data-d="1" ${i === S.chlist.length - 1 ? "disabled" : ""}>▼</button>
+      <button class="btn sm" data-act="ch-top" data-v="${i}" ${i === 0 ? "disabled" : ""} title="ganz nach oben">⤒</button>
+      <button class="btn sm${c.hidden ? " primary" : ""}" data-act="ch-hide" data-v="${i}">${c.hidden ? "Einblenden" : "Ausblenden"}</button></div></div>`; }).join(""); })() || row("Noch keine Sender", "Erst unter „TV-Empfang“ waipu.tv oder IPTV einrichten", "")}</div>`;
+  return h;
+};
+async function saveChannels(msg = "Senderliste gespeichert") {
+  await save({ tv: { order: S.chlist.map((c) => c.name), hidden: S.chlist.filter((c) => c.hidden).map((c) => c.name) } }, msg);
+  render();
+}
+
+/* Für dich: Personalisierung */
+Pages.foryou = async () => {
+  const s = S.state.settings, p = s.personal || {};
+  const [hs, fy] = await Promise.all([call("/history"), call("/foryou")]);
+  const it = hs.items || {};
+  let h = `<h1>Für dich</h1><p class="lead">WangertTV lernt, was du wann schaust und hörst – nur auf der Box, nichts geht ins Internet.</p>`;
+  h += `<div class="card">${row("Persönliche Vorschläge", "Startseite passt sich deinen Gewohnheiten und der Tageszeit an", toggle("personal.enabled", p.enabled !== false))}
+    ${row("Morgenmodus", "Morgens zuerst Wetter, Nachrichten und dein Morgenradio", toggle("personal.morning", p.morning !== false))}</div>
+    <form class="card" id="persForm" style="margin-top:12px">${row("Dein Name", "Für die Begrüßung auf der Startseite", `<input type="text" name="name" value="${esc(p.name || "")}" maxlength="30"><button class="btn primary">Speichern</button>`)}</form>`;
+  h += `<h2>Gelernt</h2><div class="card">${row(`${it.channel || 0} Sender · ${it.app || 0} Apps · ${it.radio || 0} Radiosender`, `${hs.favorites || 0} Lieblingssendungen erkannt`,
+    '<button class="btn danger" data-act="hist-clear" data-confirm="Alle gelernten Gewohnheiten löschen?">Verlauf löschen</button>')}</div>`;
+  const label = (x) => x.kind === "channel" ? `📺 ${esc(x.name)}` : x.kind === "app" ? `▶️ ${esc(((S.apps && S.apps.all) || []).find((a) => a.id === x.id)?.name || x.id)}` : `📻 ${esc((x.station || {}).name || "")}`;
+  h += `<h2>Gerade vorgeschlagen</h2>${(fy.picks || []).length ? `<div class="picks">${fy.picks.map((x) => `<span>${label(x)}</span>`).join("")}</div>` : '<p class="lead">Noch nichts gelernt – das kommt nach ein paar Tagen Fernsehen von selbst.</p>'}`;
+  if ((fy.shows || []).length) h += `<h2>Deine Sendungen</h2><div class="card"><table class="epgtbl">${fy.shows.map((x) => `<tr><td><b>${esc(x.title)}</b>${x.new ? ' <span class="pill ok">Neue Folge</span>' : ""}<br><span class="time">${esc(x.name)} · ${fmtTime(x.start)}</span></td></tr>`).join("")}</table></div>`;
+  return h;
+};
+
+/* Radio */
+Pages.radio = async () => {
+  const r = await call("/radio");
+  S.stations = {};
+  const st = (x) => { S.stations[x.id] = x; return row(esc(x.name), esc(x.tags || ""), `<button class="btn sm${r.playing && r.station && r.station.id === x.id ? " primary" : ""}" data-act="radio-play" data-v="${esc(x.id)}">${r.playing && r.station && r.station.id === x.id ? "Läuft" : "Am TV abspielen"}</button>`); };
+  let h = `<h1>Radio</h1><p class="lead">${esc((r.db || {}).count ? `${r.db.count} Sender aus Deutschland` : "Internetradio")} – abspielen auf der Box.</p>`;
+  if (r.playing && r.station) h += `<div class="note">📻 <b>${esc(r.station.name)}</b>${r.title ? ` – ${esc(r.title)}` : ""} <button class="btn" data-act="radio-stop" style="margin-left:12px">Radio aus</button></div>`;
+  h += `<h2>Favoriten</h2><div class="card">${(r.favorites || []).map(st).join("") || row("Noch keine Favoriten", "Am Fernseher im Radio mit langem OK hinzufügen", "")}</div>`;
+  h += `<h2>Zuletzt gehört</h2><div class="card">${(r.recent || []).slice(0, 12).map(st).join("") || row("Noch nichts gehört", "", "")}</div>`;
+  return h;
+};
+
+/* ------------------------------------------------------------------ Darstellung + Aktionen */
+async function render(page = S.page) {
+  S.page = page;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
+  try {
+    S.state = await call("/state");
+    $("#devName").textContent = S.state.settings.device_name || "WangertTV";
+    $("#footVer").textContent = `WangertTV ${S.state.version}`;
+    $("#main").innerHTML = await Pages[page]();
+  } catch (e) {
+    if (e.message !== "login") $("#main").innerHTML = `<div class="note warn">Die Box antwortet gerade nicht (${esc(e.message)}).</div>`;
+  }
+}
+
+document.addEventListener("change", async (e) => {
+  const el = e.target;
+  if (el.dataset.toggle === "tv.logos_official") { await save({ tv: { logos: el.checked ? "official" : "provider" } }); render(); }
+  else if (el.dataset.toggle) { await save(patchFor(el.dataset.toggle, el.checked)); if (el.dataset.toggle === "kodi.passthrough" || el.dataset.toggle === "audio.upmix") render(); }
+  else if (el.dataset.select) {
+    let v = el.value; if (/^\d+$/.test(v) && !/^(lang|theme|timezone)$/.test(el.dataset.select)) v = Number(v);
+    await save(patchFor(el.dataset.select, v));
+    if (el.dataset.select === "livetv_source" || el.dataset.select.startsWith("display") || el.dataset.select === "audio.speakers" || el.dataset.select === "audio.pcm_mode") render();
+  } else if (el.id === "sink") { await save({ audio: { sink: el.value } }); await call("/audio", { sink: el.value }); }
+  else if (el.id === "vol") { await call("/audio", { volume: Number(el.value) }); toast(`Lautstärke ${el.value}%`); }
+});
+document.addEventListener("input", (e) => { if (e.target.id === "vol") $("#volVal").textContent = `${e.target.value}%`; });
+
+document.addEventListener("submit", async (e) => {
+  const f = e.target; if (f.id === "loginForm") return;
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(f).entries());
+  if (f.id === "waipuForm") {
+    const waipu = { provider: Number(d.provider), username: d.username.trim() };
+    if (d.password) waipu.password = d.password;
+    await save({ waipu }, "waipu.tv gespeichert – Kodi übernimmt es beim nächsten Start");
+  } else if (f.id === "iptvForm") {
+    await save({ iptv: { m3u: d.m3u.trim(), epg: d.epg.trim(), refresh_hours: Number(d.refresh_hours) || 24 } }, "IPTV gespeichert");
+  } else if (f.id === "nameForm") { await save({ device_name: d.device_name.trim() || "WangertTV Box" }); }
+  else if (f.id === "cityForm") { await save({ city: d.city.trim() }); }
+  else if (f.id === "persForm") { await save({ personal: { name: d.name.trim() } }); }
+  else if (f.id === "repoForm") { await save({ update_repo: d.update_repo.trim() }); }
+  render();
+});
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-act]"); if (!b || b.disabled) return;
+  if (b.dataset.confirm && !confirm(b.dataset.confirm)) return;
+  const v = b.dataset.v;
+  switch (b.dataset.act) {
+    case "home": await call("/home", {}); toast("Startseite geöffnet"); break;
+    case "power": await call("/power", { action: v, source: "web" }); toast({ standby: "Standby", wake: "Aufgeweckt", reboot: "Box startet neu …", poweroff: "Box wird ausgeschaltet …" }[v]); setTimeout(() => render(), 1500); break;
+    case "close": await call("/apps/close", { key: v }); toast("App beendet"); render(); break;
+    case "launch": { const r = await call("/apps/launch", { id: v }); toast(r.ok ? "Auf dem Fernseher geöffnet" : "Konnte nicht geöffnet werden"); break; }
+    case "install": await call("/apps/install", { id: v }); toast("Installation gestartet – dauert ein paar Minuten"); break;
+    case "add": await save({ apps: [...S.state.settings.apps, v] }, "Zur Startseite hinzugefügt"); render(); break;
+    case "remove": await save({ apps: S.state.settings.apps.filter((x) => x !== v) }, "Entfernt"); render(); break;
+    case "move": {
+      const order = [...S.state.settings.apps]; const i = Number(v), j = i + Number(b.dataset.d);
+      [order[i], order[j]] = [order[j], order[i]]; await save({ apps: order }, "Reihenfolge gespeichert"); render(); break;
+    }
+    case "refresh-channels": toast("Senderliste wird geladen …"); await call("/channels/refresh", {}); render(); break;
+    case "audio-test": await call("/audio/test", {}); toast("Klang wird abgespielt"); break;
+    case "radio-stop": await call("/radio/stop", {}); toast("Radio aus"); setTimeout(() => render(), 800); break;
+    case "speedtest": {
+      toast("Messe Geschwindigkeit … (ca. 20 Sekunden)");
+      const r = await call("/speedtest", {});
+      toast(r.ok ? `↓ ${r.down} Mbit/s · ↑ ${r.up} Mbit/s · Ping ${r.ping} ms` : "Test fehlgeschlagen – keine Internetverbindung?");
+      break;
+    }
+    case "diag": {
+      toast("Diagnose wird erstellt …");
+      const r = await call("/diag");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([r.text || ""], { type: "text/plain;charset=utf-8" }));
+      a.download = `wangerttv-diagnose-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.txt`;
+      document.body.appendChild(a); a.click(); a.remove();
+      break;
+    }
+    case "receiver-apply": {
+      const rc = (await call("/audio")).receiver; if (!rc) break;
+      await save({ audio: { speakers: rc.layout }, kodi: { passthrough: !!rc.passthrough } }, "Passend zum Receiver eingestellt"); render(); break;
+    }
+    case "upd-check": await call("/updates/check", {}); toast("Suche gestartet"); setTimeout(() => render(), 1500); break;
+    case "upd-run": await call("/updates/run", {}); toast("Update gestartet"); setTimeout(() => render(), 1500); break;
+    case "ssh": toast(v === "off" ? "SSH wird ausgeschaltet …" : "Bitte warten …"); await call("/ssh", { action: v });
+      toast(v === "off" ? "SSH ist aus" : "Fertig – das Passwort steht jetzt am Fernseher"); render(); break;
+    case "remote-renew": await call("/phoneremote/renew", {}); toast("Neuer Code erstellt"); render(); break;
+    case "slot": S.slot = v; render(); break;
+    case "tv-play": { const r = await call("/apps/launch", { id: "livetv", channel: v }); toast(r.ok ? `${v} läuft am Fernseher` : "Konnte nicht eingeschaltet werden"); break; }
+    case "remind": {
+      const it = S.sched[Number(v)]; if (!it) break;
+      await call("/reminders", { action: "add", item: it, auto: b.dataset.auto === "1" });
+      toast(b.dataset.auto === "1" ? `Schaltet um ${hm(it.start)} automatisch um` : `Erinnerung um ${hm(it.start)}`); render(); break;
+    }
+    case "rem-del": { const r = S.reminders[Number(v)]; if (r) await call("/reminders", { action: "del", item: r }); toast("Erinnerung gelöscht"); render(); break; }
+    case "ch-move": { const i = Number(v), j = i + Number(b.dataset.d); [S.chlist[i], S.chlist[j]] = [S.chlist[j], S.chlist[i]]; await saveChannels("Reihenfolge gespeichert"); break; }
+    case "ch-top": { const [c] = S.chlist.splice(Number(v), 1); S.chlist.unshift(c); await saveChannels("Ganz nach oben verschoben"); break; }
+    case "ch-hide": { const c = S.chlist[Number(v)]; if (c) c.hidden = !c.hidden; await saveChannels(c && c.hidden ? `${c.name} ausgeblendet` : "Eingeblendet"); break; }
+    case "ch-sort": {
+      if (v === "reset") { await save({ tv: { order: [], hidden: [] } }, "Zurückgesetzt"); render(); break; }
+      const pos = new Map(S.chlist.map((c, i) => [c.name, i]));
+      const favs = ((S.state.settings.channel_prefs || {}).favorites) || [];
+      if (v === "az") S.chlist.sort((a, c) => a.name.localeCompare(c.name, "de", { sensitivity: "base" }));
+      if (v === "favs") S.chlist.sort((a, c) => (favs.includes(c.name) - favs.includes(a.name)) || (pos.get(a.name) - pos.get(c.name)));
+      if (v === "hd") { const r = { UHD: 0, HD: 1 }; S.chlist.sort((a, c) => ((r[a.quality] ?? 2) - (r[c.quality] ?? 2)) || (pos.get(a.name) - pos.get(c.name))); }
+      await saveChannels("Sortiert"); break;
+    }
+    case "hist-clear": await call("/history/clear", {}); toast("Verlauf gelöscht"); render(); break;
+    case "radio-play": { const st = S.stations[v]; if (st) { const r = await call("/radio/play", { station: st }); toast(r.ok ? `${st.name} läuft` : "Sender nicht erreichbar"); setTimeout(() => render(), 1200); } break; }
+    default: break;
+  }
+});
+
+document.addEventListener("click", async (e) => {
+  if (e.target.id !== "iptvTest") return;
+  const url = $("#iptvForm [name=m3u]").value.trim(); if (!url) { toast("Bitte zuerst eine M3U-Adresse eintragen"); return; }
+  toast("Senderliste wird geprüft …");
+  const r = await call("/iptv/test", { url });
+  toast(r.ok ? `In Ordnung: ${r.channels ?? r.count ?? "?"} Sender gefunden` : `Fehler: ${r.message || "nicht erreichbar"}`);
+});
+
+function start() {
+  $("#login").classList.add("hidden"); $("#app").classList.remove("hidden");
+  $("#nav").innerHTML = PAGES.map(([id, label]) => `<button data-page="${id}"><svg viewBox="0 0 24 24">${ICONS[id]}</svg>${label}</button>`).join("");
+  $("#nav").onclick = (e) => { const b = e.target.closest("button[data-page]"); if (b) render(b.dataset.page); };
+  render("overview");
+  clearInterval(S.timer);
+  // Übersicht und laufende Updates regelmäßig auffrischen (nicht, während man tippt)
+  S.timer = setInterval(() => {
+    const typing = document.activeElement && /INPUT|SELECT/.test(document.activeElement.tagName);
+    if (!typing && (S.page === "overview" || S.page === "updates") && !document.hidden) render();
+  }, 8000);
+}
+
+(async () => {
+  const res = await fetch("/admin/api/state", { headers: { "X-WTV-Admin": "1" } });
+  if (res.status === 401) showLogin(); else start();
+})();
+</script>
+</body>
+</html>

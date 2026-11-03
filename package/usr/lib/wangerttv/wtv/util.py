@@ -117,7 +117,7 @@ class EventBus:
                 self._subs.remove(q)
 
     def emit(self, kind, **data):
-        msg = {"type": kind, "ts": time.time(), **data}
+        msg = {**data, "type": kind, "ts": time.time()}   # Ereignistyp kann nicht überschrieben werden
         with self._lock:
             subs = list(self._subs)
         for q in subs:

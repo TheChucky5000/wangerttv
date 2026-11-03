@@ -1,0 +1,15 @@
+# WangertTV: Aufwecken aus dem Ruhezustand per Bluetooth-Fernbedienung (z. B. waipu.tv) und USB-Empfänger erlauben.
+# Intel-Bluetooth (USB-Hersteller 8087, z. B. AX201 im Geekom Mini IT11)
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="8087", TEST=="power/wakeup", ATTR{power/wakeup}="enabled"
+# Bluetooth-Adapter allgemein (USB-Geräteklasse e0 = Wireless/Bluetooth)
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{bDeviceClass}=="e0", TEST=="power/wakeup", ATTR{power/wakeup}="enabled"
+# WangertTV IR (ESP32-S3-BOX-3 mit Sensor-Dock): darf die Box aus dem Ruhezustand wecken; feste Gerätedatei
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="303a", ATTR{idProduct}=="8166", TEST=="power/wakeup", ATTR{power/wakeup}="enabled"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="8166", SYMLINK+="wangerttv-ir", ENV{ID_MM_DEVICE_IGNORE}="1"
+# Weckweg über USB freischalten: USB-Controller (xHCI) und USB-Hubs müssen das Wecksignal weiterreichen
+ACTION=="add|change", SUBSYSTEM=="pci", ATTR{class}=="0x0c0330", TEST=="power/wakeup", ATTR{power/wakeup}="enabled"
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{bDeviceClass}=="09", TEST=="power/wakeup", ATTR{power/wakeup}="enabled"
+# Pulse-Eight USB-CEC-Adapter (2548:1001/1002): ModemManager fernhalten (blockiert sonst den Adapter),
+# feste Gerätedatei und Aufwecken der Box, wenn der Fernseher eingeschaltet wird
+SUBSYSTEM=="tty", ATTRS{idVendor}=="2548", ATTRS{idProduct}=="100[12]", SYMLINK+="pulse8-cec", ENV{ID_MM_DEVICE_IGNORE}="1"
+ACTION=="add|change", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="2548", TEST=="power/wakeup", ATTR{power/wakeup}="enabled"

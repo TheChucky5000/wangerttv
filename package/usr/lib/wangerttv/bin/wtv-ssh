@@ -1,0 +1,86 @@
+#!/usr/bin/python3
+"""wtv-ssh – SSH-Zugang der Box ein-/ausschalten (läuft als root, gestartet über wtv-ssh@<aktion>.service).
+
+  wtv-ssh on      SSH einschalten und ein neues, zufälliges Passwort für den Benutzer tv setzen
+  wtv-ssh renew   neues Passwort setzen
+  wtv-ssh off     SSH ausschalten
+
+Das Passwort steht in /var/lib/wangerttv/ssh.json (nur für root und den Benutzer tv lesbar) und wird am
+Fernseher angezeigt. Es gilt auch für "sudo".
+"""
+import grp
+import json
+import os
+import secrets
+import subprocess
+import sys
+import time
+
+STATE = "/var/lib/wangerttv/ssh.json"
+UNITS = ["ssh.service", "ssh.socket"]
+# gut ablesbar am Fernseher: keine 0/O, 1/l/I
+ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+
+
+def load():
+    try:
+        with open(STATE, encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+
+def save(data):
+    os.makedirs(os.path.dirname(STATE), exist_ok=True)
+    tmp = STATE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+    try:
+        gid = grp.getgrnam("tv").gr_gid
+    except KeyError:
+        gid = 0
+    os.chown(tmp, 0, gid)
+    os.chmod(tmp, 0o640)
+    os.replace(tmp, STATE)
+
+
+def new_password():
+    groups = ["".join(secrets.choice(ALPHABET) for _ in range(4)) for _ in range(3)]
+    password = "-".join(groups)
+    subprocess.run(["chpasswd"], input=f"tv:{password}\n", text=True, check=True)
+    return password
+
+
+def systemctl(*args):
+    try:
+        return subprocess.run(["systemctl", *args], check=False, capture_output=True, timeout=60).returncode
+    except (OSError, subprocess.TimeoutExpired):
+        return 1
+
+
+def main(action):
+    st = load()
+    if action == "on":
+        st["password"] = new_password()
+        try:
+            os.remove("/etc/ssh/sshd_not_to_be_run")
+        except FileNotFoundError:
+            pass
+        systemctl("enable", "ssh.service")
+        systemctl("restart", "ssh.service")
+        st.update(enabled=True, ts=time.time())
+    elif action == "renew":
+        st["password"] = new_password()
+        st["ts"] = time.time()
+    elif action == "off":
+        systemctl("disable", "--now", *UNITS)
+        st.update(enabled=False, ts=time.time())
+    else:
+        print(__doc__)
+        return 2
+    save(st)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else ""))

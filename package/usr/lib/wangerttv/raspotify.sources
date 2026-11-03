@@ -1,0 +1,8 @@
+# WangertTV: Spotify Connect (librespot) – Debian enthält librespot nicht, Raspotify liefert es auch für PCs (amd64).
+# Genutzt wird nur das Paket "raspotify" (siehe preferences.d/wangerttv-raspotify); sein Systemdienst bleibt aus,
+# WangertTV startet librespot selbst in der TV-Sitzung (Ton über PipeWire).
+Types: deb
+URIs: https://dtcooper.github.io/raspotify
+Suites: raspotify
+Components: main
+Signed-By: /usr/share/keyrings/wangerttv-raspotify.asc

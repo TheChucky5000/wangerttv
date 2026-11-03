@@ -20,6 +20,8 @@ done
 sleep 1
 echo "$(date '+%F %T') Sitzung startet (Grafik: $(find /dev/dri -maxdepth 1 -name 'card*' -printf '%f ' 2>/dev/null))" >>"$LOGDIR/sway.log"
 
+# Systemprogramme (rfkill, modinfo, …) liegen unter /usr/sbin – für den Benutzer tv sonst nicht im PATH
+case ":$PATH:" in *:/usr/sbin:*) ;; *) export PATH="$PATH:/usr/local/sbin:/usr/sbin:/sbin" ;; esac
 export XDG_SESSION_TYPE=wayland
 export XDG_CURRENT_DESKTOP=sway
 export XDG_SESSION_DESKTOP=sway
@@ -36,6 +38,9 @@ for vendor in /sys/class/drm/card*/device/vendor; do
         break
     fi
 done
+
+# Bildmodus aus den Einstellungen (von WangertTV geschrieben) – Datei muss für "include" existieren
+mkdir -p "$HOME/.config/wangerttv" && touch "$HOME/.config/wangerttv/sway-output.conf"
 
 start=$(date +%s)
 sway --unsupported-gpu -c /usr/lib/wangerttv/sway/config >>"$LOGDIR/sway.log" 2>&1

@@ -1,0 +1,24 @@
+#!/bin/sh
+# WangertTV: Den Bildmodus, den die Oberfläche nutzt (z. B. 4K mit 60 Hz), schon dem Linux-Kernel mitgeben.
+# Dann stellt der Grafiktreiber den Fernseher beim Start einmal auf diesen Modus ein – Bootanimation und Oberfläche
+# laufen danach ohne weiteren Moduswechsel (der Fernseher würde sonst jedes Mal kurz schwarz werden).
+# Aufruf (als root über wtv-bootvideo@<Anschluss>_<Breite>x<Höhe>_<Hz>.service), z. B. HDMI-A-1_3840x2160_60
+set -eu
+arg="${1:-}"
+cfg=/etc/default/grub.d/zz-wangerttv-video.cfg
+case "$arg" in
+    off) new="" ;;
+    *)
+        echo "$arg" | grep -Eq '^[A-Za-z]+(-[A-Za-z]+)?-[0-9]{1,2}_[0-9]{3,4}x[0-9]{3,4}_[0-9]{2,3}$' || { echo "ungültig: $arg" >&2; exit 1; }
+        conn="${arg%%_*}"; rest="${arg#*_}"; res="${rest%_*}"; hz="${rest##*_}"
+        new="# WangertTV: Bildmodus beim Start (wird automatisch gepflegt)
+GRUB_CMDLINE_LINUX_DEFAULT=\"\$GRUB_CMDLINE_LINUX_DEFAULT video=${conn}:${res}@${hz}\""
+        ;;
+esac
+old="$(cat "$cfg" 2>/dev/null || true)"
+[ "$new" = "$old" ] && { echo "unverändert"; exit 0; }
+if [ -z "$new" ]; then rm -f "$cfg"; else printf '%s\n' "$new" > "$cfg"; fi
+if [ -f /boot/grub/grub.cfg ] && command -v update-grub >/dev/null 2>&1 && [ ! -d /run/live/medium ]; then
+    update-grub >/dev/null 2>&1 || true
+fi
+echo "Bildmodus beim Start: ${arg}"

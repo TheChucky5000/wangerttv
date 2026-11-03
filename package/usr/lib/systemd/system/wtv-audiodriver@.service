@@ -1,0 +1,6 @@
+[Unit]
+Description=WangertTV – Ton-Treiber umschalten (%i) und neu starten
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-audiodriver %i

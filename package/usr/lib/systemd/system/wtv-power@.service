@@ -1,0 +1,6 @@
+[Unit]
+Description=WangertTV Leistungsprofil (%i)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-power %i

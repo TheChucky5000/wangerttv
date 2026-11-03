@@ -5,8 +5,22 @@ import time
 
 from . import config, icons, mock
 from .config import read_json
+from .sway import sway
 from .system import systemctl_start
 from .util import log, run, spawn, which
+
+WINDOW_RX = r"waydroid"
+LAUNCH_LOG = os.path.join(config.LOG_DIR, "android-launch.log")
+
+
+def _note(msg):
+    """Kurzes Protokoll der Android-Starts (hilft bei der Fehlersuche: ~/.cache/wangerttv/logs/android-launch.log)."""
+    log.info("Android: %s", msg)
+    try:
+        with open(LAUNCH_LOG, "a", encoding="utf-8") as fh:
+            fh.write(f"{time.strftime('%F %T')} {msg}\n")
+    except OSError:
+        pass
 
 HIDDEN = {
     "com.android.documentsui", "com.android.camera2", "org.lineageos.jelly", "org.lineageos.etar",
@@ -93,21 +107,90 @@ class Android:
     def request_id(self):
         return True if config.DEV else systemctl_start("wtv-android@id.service")
 
-    def ensure_session(self, timeout=60):
+    def ensure_session(self, timeout=90):
         if config.DEV:
             return True
-        if self.status()["running"]:
+        if re.search(r"Session:\s*RUNNING", run(["waydroid", "status"], timeout=8)[1]):
             return True
+        # Der Container-Dienst (root) muss laufen, sonst startet keine Sitzung
+        out = run(["waydroid", "status"], timeout=8)[1]
+        if re.search(r"Container:\s*(STOPPED|FROZEN)", out) or "not" in out.lower():
+            _note("Container-Dienst wird gestartet")
+            systemctl_start("waydroid-container.service")
+            time.sleep(3)
         if not (self._session_proc and self._session_proc.poll() is None):
+            _note("Sitzung wird gestartet")
             self._session_proc = spawn(["waydroid", "session", "start"],
                                        logfile=os.path.join(config.LOG_DIR, "waydroid-session.log"))
         end = time.time() + timeout
         while time.time() < end:
             if re.search(r"Session:\s*RUNNING", run(["waydroid", "status"], timeout=8)[1]):
                 return True
+            if self._session_proc and self._session_proc.poll() is not None:
+                _note(f"Sitzung beendet sich sofort (Code {self._session_proc.returncode}) – siehe waydroid-session.log")
+                return False
             time.sleep(1.5)
-        log.warning("Waydroid-Sitzung startet nicht")
+        _note("Sitzung startet nicht (Zeitüberschreitung)")
         return False
+
+    def wait_booted(self, timeout=180):
+        """Wartet, bis Android fertig hochgefahren ist – vorher gestartete Apps gehen sonst still verloren."""
+        end = time.time() + timeout
+        while time.time() < end:
+            rc, out, _ = run(["waydroid", "prop", "get", "sys.boot_completed"], timeout=15)
+            if out.strip() == "1":
+                return True
+            if rc not in (0, 1):
+                time.sleep(4)
+            time.sleep(2)
+        _note("Android meldet nach %d s noch keinen fertigen Start" % timeout)
+        return False
+
+    def _wait_window(self, seconds):
+        end = time.time() + seconds
+        while time.time() < end:
+            if sway.find_windows(WINDOW_RX):
+                return True
+            time.sleep(1)
+        return False
+
+    def launch(self, package=None):
+        if config.DEV:
+            return True
+        if package and not re.fullmatch(r"[A-Za-z0-9_.]+", package):
+            return False
+        if not self.ensure_session():
+            return False
+        if not self.wait_booted():
+            return False
+        target = package or "Android-Oberfläche"
+        for attempt in (1, 2):
+            if package:
+                rc, out, err = run(["waydroid", "app", "launch", package], timeout=30)
+                if rc != 0:
+                    _note(f"app launch {package}: Code {rc} {(err or out).strip()[-200:]}")
+            else:
+                spawn(["waydroid", "show-full-ui"], logfile=os.path.join(config.LOG_DIR, "waydroid-ui.log"))
+            if self._wait_window(20 if attempt == 1 else 30):
+                _note(f"{target} geöffnet")
+                return True
+            # Kein Fenster: die komplette Oberfläche einblenden (erzeugt das Android-Fenster zuverlässig) und erneut versuchen
+            _note(f"{target}: kein Fenster nach Versuch {attempt} – blende Android-Oberfläche ein")
+            spawn(["waydroid", "show-full-ui"], logfile=os.path.join(config.LOG_DIR, "waydroid-ui.log"))
+            time.sleep(4)
+        _note(f"{target} konnte nicht angezeigt werden")
+        return False
+
+    def restart(self):
+        """Android neu starten (z. B. nach der Google-Registrierung)."""
+        if config.DEV:
+            return True
+        _note("Neustart angefordert")
+        self.stop()
+        if self._session_proc and self._session_proc.poll() is None:
+            self._session_proc.terminate()
+        time.sleep(2)
+        return self.ensure_session() and self.wait_booted()
 
     def apps(self):
         if config.DEV:
@@ -130,18 +213,6 @@ class Android:
                     apps.append(cur)
                 cur = {}
         return sorted(apps, key=lambda a: a["name"].lower())
-
-    def launch(self, package=None):
-        if config.DEV:
-            return True
-        if not self.ensure_session():
-            return False
-        if package:
-            if not re.fullmatch(r"[A-Za-z0-9_.]+", package):
-                return False
-            return run(["waydroid", "app", "launch", package], timeout=20)[0] == 0
-        spawn(["waydroid", "show-full-ui"], logfile=os.path.join(config.LOG_DIR, "waydroid-ui.log"))
-        return True
 
     def stop(self):
         if config.DEV:

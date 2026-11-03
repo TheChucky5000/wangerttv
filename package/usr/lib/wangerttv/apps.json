@@ -1,19 +1,354 @@
 [
-  {"id": "livetv", "name": "Live-TV", "type": "kodi", "view": "tvchannels", "glyph": "tv", "category": "tv", "color": "#1d7bff", "color2": "#06296b", "desc": {"de": "Fernsehen über deine IPTV-Senderliste (Kodi)", "en": "Watch TV from your IPTV channel list (Kodi)"}},
-  {"id": "tvguide", "name": "TV-Programm", "type": "kodi", "view": "tvguide", "glyph": "guide", "category": "tv", "color": "#2f6df6", "color2": "#0c1f5c", "desc": {"de": "Elektronischer Programmführer (EPG)", "en": "Electronic programme guide (EPG)"}},
-  {"id": "kodi", "name": "Kodi", "type": "kodi", "view": "home", "glyph": "kodi", "category": "media", "color": "#17b2e7", "color2": "#0a3f5c", "desc": {"de": "Mediacenter für Filme, Serien, Musik und Add-ons", "en": "Media center for movies, shows, music and add-ons"}},
-  {"id": "mediathek", "name": "Mediathek", "type": "kodi_addon", "addon": "plugin.video.mediathekview", "glyph": "film", "category": "media", "color": "#0e9f8f", "color2": "#073f3a", "desc": {"de": "ARD, ZDF, arte, 3sat & mehr – über MediathekView in Kodi", "en": "German public broadcasters via MediathekView in Kodi"}},
-  {"id": "youtube", "name": "YouTube", "type": "web", "url": "https://www.youtube.com/tv", "glyph": "play", "category": "stream", "ua": "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)", "color": "#f2263b", "color2": "#5c0710", "desc": {"de": "YouTube in der TV-Ansicht – mit Fernbedienung bedienbar", "en": "YouTube TV interface, remote friendly"}, "icon_site": "https://www.youtube.com/"},
-  {"id": "netflix", "name": "Netflix", "type": "web", "url": "https://www.netflix.com/browse", "glyph": "film", "category": "stream", "color": "#d81f26", "color2": "#3b0507", "desc": {"de": "Netflix im Browser (Linux: max. 720p)", "en": "Netflix in the browser (Linux: up to 720p)"}, "icon_site": "https://www.netflix.com/"},
-  {"id": "spotify", "name": "Spotify", "type": "flatpak", "flatpak": "com.spotify.Client", "fallback_url": "https://open.spotify.com", "glyph": "music", "category": "music", "color": "#1ed760", "color2": "#0a4421", "desc": {"de": "Musik & Podcasts – zusätzlich als Spotify-Connect-Lautsprecher", "en": "Music & podcasts – also a Spotify Connect speaker"}, "icon_site": "https://open.spotify.com/"},
-  {"id": "playstore", "name": "Play Store", "type": "android", "package": "com.android.vending", "glyph": "store", "category": "apps", "color": "#00a173", "color2": "#0b2f5e", "desc": {"de": "Android-Apps aus dem Google Play Store", "en": "Android apps from Google Play"}},
-  {"id": "android", "name": "Android", "type": "android", "glyph": "android", "category": "apps", "color": "#3ddc84", "color2": "#0f4d2b", "desc": {"de": "Komplette Android-Oberfläche mit allen installierten Apps", "en": "Full Android interface with all installed apps"}},
-  {"id": "browser", "name": "Browser", "type": "browser", "url": "https://www.google.com", "glyph": "globe", "category": "apps", "color": "#4f7cff", "color2": "#14235a", "desc": {"de": "Google Chrome mit Adressleiste", "en": "Google Chrome with address bar"}},
-  {"id": "prime", "name": "Prime Video", "type": "web", "url": "https://www.amazon.de/gp/video/storefront", "glyph": "play", "category": "stream", "color": "#1aa6e0", "color2": "#07324a", "desc": {"de": "Amazon Prime Video im Browser", "en": "Amazon Prime Video in the browser"}, "icon_site": "https://www.primevideo.com/"},
-  {"id": "disney", "name": "Disney+", "type": "web", "url": "https://www.disneyplus.com/", "glyph": "star", "category": "stream", "color": "#2a5bd7", "color2": "#0a1440", "desc": {"de": "Disney+ im Browser", "en": "Disney+ in the browser"}, "icon_site": "https://www.disneyplus.com/"},
-  {"id": "joyn", "name": "Joyn", "type": "web", "url": "https://www.joyn.de/", "glyph": "tv", "category": "stream", "color": "#8c5cff", "color2": "#2a1460", "desc": {"de": "Joyn – Live-TV & Mediathek von ProSiebenSat.1", "en": "Joyn – live TV & on demand"}, "icon_site": "https://www.joyn.de/"},
-  {"id": "twitch", "name": "Twitch", "type": "web", "url": "https://www.twitch.tv/", "glyph": "play", "category": "stream", "color": "#9146ff", "color2": "#2c0f5c", "desc": {"de": "Live-Streams auf Twitch", "en": "Live streams on Twitch"}, "icon_site": "https://www.twitch.tv/"},
-  {"id": "plex", "name": "Plex", "type": "flatpak", "flatpak": "tv.plex.PlexHTPC", "glyph": "server", "category": "media", "color": "#e5a00d", "color2": "#4a3203", "desc": {"de": "Plex HTPC – TV-Oberfläche für deinen Plex-Server", "en": "Plex HTPC – TV interface for your Plex server"}},
-  {"id": "jellyfin", "name": "Jellyfin", "type": "flatpak", "flatpak": "com.github.iwalton3.jellyfin-media-player", "glyph": "server", "category": "media", "color": "#7a5cff", "color2": "#0b6fbf", "desc": {"de": "Jellyfin Media Player mit TV-Modus", "en": "Jellyfin Media Player with TV mode"}},
-  {"id": "settings", "name": "Einstellungen", "type": "internal", "target": "settings", "glyph": "settings", "category": "system", "color": "#4a5a70", "color2": "#151d2a", "desc": {"de": "WangertTV einstellen", "en": "Configure WangertTV"}}
+  {
+    "id": "livetv",
+    "name": "Live-TV",
+    "type": "kodi",
+    "view": "tvchannels",
+    "glyph": "tv",
+    "category": "tv",
+    "color": "#1d7bff",
+    "color2": "#06296b",
+    "desc": {
+      "de": "Fernsehen über deine IPTV-Senderliste (Kodi)",
+      "en": "Watch TV from your IPTV channel list (Kodi)"
+    }
+  },
+  {
+    "id": "tvguide",
+    "name": "TV-Programm",
+    "type": "kodi",
+    "view": "tvguide",
+    "glyph": "guide",
+    "category": "tv",
+    "color": "#2f6df6",
+    "color2": "#0c1f5c",
+    "desc": {
+      "de": "Elektronischer Programmführer (EPG)",
+      "en": "Electronic programme guide (EPG)"
+    }
+  },
+  {
+    "id": "tvplaner",
+    "name": "TV-Planer",
+    "type": "internal",
+    "target": "tvplaner",
+    "glyph": "guide",
+    "category": "tv",
+    "color": "#ff7849",
+    "color2": "#4a1206",
+    "desc": {
+      "de": "Was läuft heute um 20:15? Alle Sender auf einen Blick – mit Erinnerung und automatischem Umschalten",
+      "en": "What's on tonight at 8:15 pm? All channels at a glance – with reminders and automatic switching"
+    }
+  },
+  {
+    "id": "kodi",
+    "name": "Kodi",
+    "type": "kodi",
+    "window": "^kodi$",
+    "view": "home",
+    "glyph": "kodi",
+    "category": "media",
+    "color": "#17b2e7",
+    "color2": "#0a3f5c",
+    "desc": {
+      "de": "Mediacenter für Filme, Serien, Musik und Add-ons",
+      "en": "Media center for movies, shows, music and add-ons"
+    }
+  },
+  {
+    "id": "mediathek",
+    "name": "Mediathek",
+    "type": "kodi_addon",
+    "addon": "plugin.video.mediathekview",
+    "glyph": "film",
+    "category": "media",
+    "color": "#0e9f8f",
+    "color2": "#073f3a",
+    "desc": {
+      "de": "ARD, ZDF, arte, 3sat & mehr – über MediathekView in Kodi",
+      "en": "German public broadcasters via MediathekView in Kodi"
+    }
+  },
+  {
+    "id": "youtube",
+    "name": "YouTube",
+    "type": "web",
+    "url": "https://www.youtube.com/tv",
+    "glyph": "play",
+    "category": "stream",
+    "ua": "Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)",
+    "color": "#f2263b",
+    "color2": "#5c0710",
+    "desc": {
+      "de": "YouTube in der TV-Ansicht – mit Fernbedienung bedienbar",
+      "en": "YouTube TV interface, remote friendly"
+    },
+    "icon_site": "https://www.youtube.com/",
+    "tvnav": false
+  },
+  {
+    "id": "youtube_kodi",
+    "name": "YouTube (Kodi)",
+    "type": "kodi_addon",
+    "addon": "plugin.video.youtube",
+    "glyph": "play",
+    "category": "stream",
+    "color": "#f2263b",
+    "color2": "#3b0507",
+    "desc": {
+      "de": "YouTube über Kodi – Ton geht unverändert an den Receiver (5.1, wo ein Video es hat)",
+      "en": "YouTube via Kodi – audio goes straight to the receiver (5.1 where a video has it)"
+    },
+    "icon_site": "https://www.youtube.com/"
+  },
+  {
+    "id": "netflix",
+    "name": "Netflix",
+    "type": "web",
+    "url": "https://www.netflix.com/browse",
+    "glyph": "film",
+    "category": "stream",
+    "color": "#d81f26",
+    "color2": "#3b0507",
+    "desc": {
+      "de": "Netflix im Browser (Linux: max. 720p)",
+      "en": "Netflix in the browser (Linux: up to 720p)"
+    },
+    "icon_site": "https://www.netflix.com/"
+  },
+  {
+    "id": "spotify",
+    "name": "Spotify",
+    "type": "web",
+    "url": "https://open.spotify.com/",
+    "glyph": "music",
+    "category": "music",
+    "color": "#1ed760",
+    "color2": "#0a4421",
+    "desc": {
+      "de": "Musik & Podcasts – mit Fernbedienung bedienbar. Tipp: Vom Handy per Spotify Connect abspielen",
+      "en": "Music & podcasts – remote friendly. Tip: play from your phone via Spotify Connect"
+    },
+    "icon_site": "https://open.spotify.com/"
+  },
+  {
+    "id": "spotify_desktop",
+    "name": "Spotify (Desktop)",
+    "type": "flatpak",
+    "flatpak": "com.spotify.Client",
+    "args": [
+      "--enable-features=UseOzonePlatform",
+      "--ozone-platform=wayland"
+    ],
+    "glyph": "music",
+    "category": "music",
+    "color": "#1ed760",
+    "color2": "#0a4421",
+    "desc": {
+      "de": "Offizielle Spotify-App – auch Connect-Ziel im Hintergrund (Einstellungen → Streaming-Empfang)",
+      "en": "Official Spotify app – also a Connect target in the background (Settings → Streaming)"
+    },
+    "icon_site": "https://open.spotify.com/",
+    "window": "^spotify$"
+  },
+  {
+    "id": "playstore",
+    "name": "Play Store",
+    "type": "android",
+    "package": "com.android.vending",
+    "glyph": "store",
+    "category": "apps",
+    "color": "#00a173",
+    "color2": "#0b2f5e",
+    "desc": {
+      "de": "Android-Apps aus dem Google Play Store",
+      "en": "Android apps from Google Play"
+    }
+  },
+  {
+    "id": "android",
+    "name": "Android",
+    "type": "android",
+    "glyph": "android",
+    "category": "apps",
+    "color": "#3ddc84",
+    "color2": "#0f4d2b",
+    "desc": {
+      "de": "Komplette Android-Oberfläche mit allen installierten Apps",
+      "en": "Full Android interface with all installed apps"
+    }
+  },
+  {
+    "id": "browser",
+    "name": "Browser",
+    "type": "browser",
+    "url": "https://www.google.com",
+    "glyph": "globe",
+    "category": "apps",
+    "color": "#4f7cff",
+    "color2": "#14235a",
+    "desc": {
+      "de": "Google Chrome mit Adressleiste",
+      "en": "Google Chrome with address bar"
+    }
+  },
+  {
+    "id": "prime",
+    "name": "Prime Video",
+    "type": "web",
+    "url": "https://www.amazon.de/gp/video/storefront",
+    "glyph": "play",
+    "category": "stream",
+    "color": "#1aa6e0",
+    "color2": "#07324a",
+    "desc": {
+      "de": "Amazon Prime Video im Browser",
+      "en": "Amazon Prime Video in the browser"
+    },
+    "icon_site": "https://www.primevideo.com/"
+  },
+  {
+    "id": "disney",
+    "name": "Disney+",
+    "type": "web",
+    "url": "https://www.disneyplus.com/",
+    "glyph": "star",
+    "category": "stream",
+    "color": "#2a5bd7",
+    "color2": "#0a1440",
+    "desc": {
+      "de": "Disney+ im Browser",
+      "en": "Disney+ in the browser"
+    },
+    "icon_site": "https://www.disneyplus.com/"
+  },
+  {
+    "id": "joyn",
+    "name": "Joyn",
+    "type": "web",
+    "url": "https://www.joyn.de/",
+    "glyph": "tv",
+    "category": "stream",
+    "color": "#8c5cff",
+    "color2": "#2a1460",
+    "desc": {
+      "de": "Joyn – Live-TV & Mediathek von ProSiebenSat.1",
+      "en": "Joyn – live TV & on demand"
+    },
+    "icon_site": "https://www.joyn.de/"
+  },
+  {
+    "id": "twitch",
+    "name": "Twitch",
+    "type": "web",
+    "url": "https://www.twitch.tv/",
+    "glyph": "play",
+    "category": "stream",
+    "color": "#9146ff",
+    "color2": "#2c0f5c",
+    "desc": {
+      "de": "Live-Streams auf Twitch",
+      "en": "Live streams on Twitch"
+    },
+    "icon_site": "https://www.twitch.tv/"
+  },
+  {
+    "id": "player",
+    "name": "WangertTV Player",
+    "type": "internal",
+    "target": "player",
+    "glyph": "play",
+    "category": "media",
+    "color": "#1477ff",
+    "color2": "#071a3d",
+    "desc": {
+      "de": "Eigener Player für die Fernbedienung: spielt jedes Video-, Musik- und Bildformat – vom USB-Stick, von der Festplatte und aus deinen Ordnern",
+      "en": "Built-in player made for the remote: plays every video, music and picture format – from USB sticks, hard drives and your folders"
+    }
+  },
+  {
+    "id": "share",
+    "name": "Vom Handy",
+    "type": "internal",
+    "target": "share",
+    "glyph": "share",
+    "category": "media",
+    "color": "#d14b7a",
+    "color2": "#3a0b1f",
+    "desc": {
+      "de": "QR-Code scannen und Fotos, Videos oder Links vom Handy direkt auf den Fernseher schicken",
+      "en": "Scan the QR code and send photos, videos or links from your phone straight to the TV"
+    }
+  },
+  {
+    "id": "radio",
+    "name": "Radio",
+    "type": "internal",
+    "target": "radio",
+    "glyph": "radio",
+    "category": "music",
+    "color": "#7b3cff",
+    "color2": "#1d0b4a",
+    "desc": {
+      "de": "Internetradio: tausende Sender aus Deutschland und der Welt – mit Favoriten und „Läuft gerade“",
+      "en": "Internet radio: thousands of stations from Germany and the world – with favourites and now playing"
+    }
+  },
+  {
+    "id": "plex",
+    "name": "Plex",
+    "type": "flatpak",
+    "flatpak": "tv.plex.PlexHTPC",
+    "glyph": "server",
+    "category": "media",
+    "color": "#e5a00d",
+    "color2": "#4a3203",
+    "desc": {
+      "de": "Plex HTPC – TV-Oberfläche für deinen Plex-Server",
+      "en": "Plex HTPC – TV interface for your Plex server"
+    }
+  },
+  {
+    "id": "jellyfin",
+    "name": "Jellyfin",
+    "type": "flatpak",
+    "flatpak": "com.github.iwalton3.jellyfin-media-player",
+    "glyph": "server",
+    "category": "media",
+    "color": "#7a5cff",
+    "color2": "#0b6fbf",
+    "desc": {
+      "de": "Jellyfin Media Player mit TV-Modus",
+      "en": "Jellyfin Media Player with TV mode"
+    }
+  },
+  {
+    "id": "files",
+    "name": "Dateien",
+    "type": "internal",
+    "target": "files",
+    "glyph": "folder",
+    "category": "system",
+    "color": "#0f6b8f",
+    "color2": "#052433",
+    "desc": {
+      "de": "Dateimanager: Dateien auf USB-Sticks und der Box kopieren, verschieben, umbenennen und löschen",
+      "en": "File manager: copy, move, rename and delete files on USB sticks and the box"
+    }
+  },
+  {
+    "id": "settings",
+    "name": "Einstellungen",
+    "type": "internal",
+    "target": "settings",
+    "glyph": "settings",
+    "category": "system",
+    "color": "#4a5a70",
+    "color2": "#151d2a",
+    "desc": {
+      "de": "WangertTV einstellen",
+      "en": "Configure WangertTV"
+    }
+  }
 ]

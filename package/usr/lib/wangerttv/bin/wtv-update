@@ -21,7 +21,8 @@ STATUS = os.path.join(STATE, "status.json")
 LOG = "/var/log/wangerttv-update.log"
 LOCK = "/run/wangerttv-update.lock"
 UPDATE_CONF = "/etc/wangerttv/update.conf"   # optional: WTV_REPO=benutzer/wangerttv (GitHub-Releases)
-ENV = dict(os.environ, DEBIAN_FRONTEND="noninteractive", LC_ALL="C.UTF-8", LANG="C.UTF-8")
+# WTV_UPDATER: das Paket-Skript startet die Oberfläche dann nicht mitten im Update neu (das macht restart_session am Ende)
+ENV = dict(os.environ, DEBIAN_FRONTEND="noninteractive", LC_ALL="C.UTF-8", LANG="C.UTF-8", WTV_UPDATER="1")
 APT_OPTS = ["-y", "-o", "Dpkg::Options::=--force-confdef", "-o", "Dpkg::Options::=--force-confold"]
 
 
@@ -136,6 +137,7 @@ def self_update_info():
 
 # ---------------------------------------------------------------------- Prüfen
 def check():
+    heal_sources()
     save(state="checking", progress=3, message="Paketquellen werden geprüft …")
     run(["apt-get", "update", "-q"], timeout=900)
     _, out = run(["apt", "list", "--upgradable"], timeout=120)
@@ -183,8 +185,47 @@ def apt_upgrade(lo, hi):
     return proc.wait()
 
 
+# Pakete, nach deren Aktualisierung die laufende TV-Sitzung (Chrome-Oberfläche, Kodi, Sway, Ton) neu starten muss.
+# Sonst laufen alte Programmteile gegen neue Dateien – Chrome z. B. zeigt dann nur noch leere oder hängende Seiten.
+SESSION_PKGS = re.compile(r"^(google-chrome|kodi|sway|libwlroots|wlroots|xwayland|libgl1|libegl|libgbm|mesa-|libdrm|"
+                          r"pipewire|libpipewire|wireplumber|greetd|python3(\.\d+)?$|libpython3)")
+
+
+def session_running():
+    return subprocess.run(["pgrep", "-u", "tv", "-x", "sway"], capture_output=True, check=False).returncode == 0
+
+
+def restart_session():
+    """TV-Sitzung sauber neu starten (automatische Anmeldung, frische Oberfläche).
+
+    Wichtig: Nur greetd neu zu starten reicht nicht – die alte Sitzung läuft in einem eigenen Bereich weiter, hält
+    Bildschirm und Eingabegeräte fest, und die neue Sitzung kommt nicht hoch ("nichts reagiert"). Darum zuerst die
+    Sitzung des Benutzers tv beenden. Kommt die Oberfläche trotzdem nicht zurück, startet die Box neu."""
+    logline("TV-Sitzung wird nach dem Update neu gestartet")
+    save(state="running", progress=100, message="WangertTV startet neu …")
+    time.sleep(4)
+    save(state="done", message="")
+    run(["loginctl", "terminate-user", "tv"], timeout=60)
+    for _ in range(20):                      # warten, bis die alte Sitzung wirklich weg ist
+        if not session_running():
+            break
+        time.sleep(0.5)
+    subprocess.run(["pkill", "-KILL", "-u", "tv", "-x", "sway"], check=False)
+    time.sleep(1)
+    run(["systemctl", "restart", "greetd.service"], timeout=120)
+    for _ in range(45):                      # Sicherheitsnetz
+        time.sleep(2)
+        if session_running():
+            logline("TV-Sitzung läuft wieder")
+            return
+    logline("TV-Sitzung kam nicht zurück – Box wird neu gestartet")
+    run(["systemctl", "reboot"], timeout=60)
+
+
 def update_all(auto=False):
     check()
+    pending = list(status.get("packages") or [])
+    session_update = any(SESSION_PKGS.match(p) for p in pending)
     errors = []
     save(state="running", progress=8, message="System-Pakete werden aktualisiert …")
     run(["dpkg", "--configure", "-a"], timeout=1800)
@@ -207,6 +248,9 @@ def update_all(auto=False):
         if run(["waydroid", "upgrade"], timeout=3600)[0] != 0:
             errors.append("Android")
 
+    if not ensure_extras(refresh=False):
+        errors.append("Spotify Connect")
+
     info = self_update_info()
     self_updated = False
     if info and info["newer"]:
@@ -216,7 +260,9 @@ def update_all(auto=False):
         else:
             errors.append("WangertTV")
 
-    reboot = os.path.exists("/run/reboot-required") or kernel_changed() or self_updated
+    # Manuelles Update: WangertTV/Chrome/Kodi brauchen nur einen Neustart der TV-Sitzung (geschieht gleich unten),
+    # nachts ohne Zuschauer genügt der leise Neustart im Standby.
+    reboot = os.path.exists("/run/reboot-required") or kernel_changed() or (auto and (self_updated or session_update))
     msg = ("Teilweise fehlgeschlagen: " + ", ".join(errors)) if errors else ""
     save(state="error" if errors else "done", progress=100, message=msg, last_update=time.time(), reboot_required=reboot)
     check_after = check_quiet()
@@ -224,6 +270,8 @@ def update_all(auto=False):
     save(state="error" if errors else "done", message=msg)
     if auto and reboot:
         quiet_reboot()
+    elif not auto and (session_update or self_updated):
+        restart_session()
 
 
 def quiet_reboot():
@@ -252,6 +300,7 @@ def check_quiet():
 
 def install_self(info):
     import hashlib
+    heal_sources()
     target = "/var/cache/wangerttv-update.deb"
     try:
         urllib.request.urlretrieve(info["deb"], target)   # noqa: S310 – feste https-Adresse von GitHub
@@ -268,6 +317,65 @@ def install_self(info):
         return False
     ok = run(["apt-get", *APT_OPTS, "install", target], timeout=1800)[0] == 0
     os.unlink(target)
+    return ok
+
+
+OUR_RASPOTIFY = "/etc/apt/sources.list.d/wangerttv-raspotify.sources"
+
+
+def heal_sources():
+    """Doppelte Paketquellen reparieren, bevor apt läuft.
+
+    Gibt es neben WangertTVs Raspotify-Quelle noch eine eigene (z. B. vom Raspotify-Installationsskript), lehnt
+    apt ALLES ab ("Conflicting values set for option Signed-By") – dann gäbe es gar keine Updates mehr.
+    WangertTVs Eintrag wird in dem Fall entfernt; die vorhandene Quelle reicht."""
+    if not os.path.exists(OUR_RASPOTIFY):
+        return
+    import glob as _glob
+    for path in ["/etc/apt/sources.list", *_glob.glob("/etc/apt/sources.list.d/*")]:
+        if path == OUR_RASPOTIFY or not os.path.isfile(path):
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        if "dtcooper.github.io/raspotify" in text and any(
+                not ln.lstrip().startswith("#") and "dtcooper.github.io/raspotify" in ln for ln in text.splitlines()):
+            os.remove(OUR_RASPOTIFY)
+            logline(f"Doppelte Raspotify-Quelle ({path}) – WangertTV-Eintrag entfernt")
+            return
+
+
+def raspotify_source():
+    import glob as _glob
+    for path in ["/etc/apt/sources.list", *_glob.glob("/etc/apt/sources.list.d/*")]:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                if "dtcooper.github.io/raspotify" in fh.read():
+                    return True
+        except OSError:
+            continue
+    return False
+
+
+def ensure_extras(refresh=True):
+    """Zusatzkomponenten nachinstallieren, die nicht in Debian sind – z. B. Spotify Connect (librespot aus Raspotify).
+
+    Nur wenn die Funktion in WangertTV eingeschaltet ist. Raspotifys eigener Systemdienst bleibt aus
+    (WangertTV startet librespot selbst in der TV-Sitzung)."""
+    heal_sources()
+    s = settings()
+    if not s.get("spotify_connect") or os.path.exists("/usr/bin/librespot"):
+        return True
+    if not raspotify_source():
+        return True          # ältere WangertTV-Version ohne Quelle – nach dem Selbst-Update erledigt das die Sitzung
+    save(state="running", progress=20, message="Spotify Connect wird installiert …")
+    if refresh:
+        run(["apt-get", "update", "-q"], timeout=900)
+    ok = run(["apt-get", *APT_OPTS, "install", "raspotify"], timeout=1800)[0] == 0
+    run(["systemctl", "disable", "--now", "raspotify.service"], timeout=60)
+    logline("Spotify Connect (raspotify) " + ("installiert" if ok else "konnte nicht installiert werden"))
     return ok
 
 
@@ -295,6 +403,10 @@ def main():
             check()
         elif mode == "--all":
             update_all()
+        elif mode == "--extras":
+            ok = ensure_extras()
+            save(state="done" if ok else "error", progress=100,
+                 message="" if ok else "Spotify Connect konnte nicht installiert werden")
         elif mode == "--auto":
             if (settings().get("autoupdate") or {}).get("enabled", True):
                 update_all(auto=True)

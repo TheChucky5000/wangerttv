@@ -10,10 +10,13 @@
 Steuerung über /run/wangerttv/remote.sock (eine JSON-Zeile pro Anfrage).
 """
 import json
+import collections
+import glob
 import logging
 import os
 import pwd
 import re
+import select
 import selectors
 import shutil
 import socketserver
@@ -34,7 +37,23 @@ SOCKET = os.path.join(RUN_DIR, "remote.sock")
 STATUS = os.path.join(RUN_DIR, "remote.json")
 API = "http://127.0.0.1:8765"
 UINPUT_NAME = "WangertTV CEC"
+MOUSE_NAME = "WangertTV Maus"
 log = logging.getLogger("wtv-remote")
+# Letzte Protokollzeilen im Speicher – für "Diagnose herunterladen" (das System-Journal darf die TV-Sitzung nicht lesen)
+LOG_RING = collections.deque(maxlen=400)
+
+
+class RingHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            LOG_RING.append(time.strftime("%Y-%m-%d %H:%M:%S ") + record.levelname + " " + record.getMessage())
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# Fernbedienungen am Namen erkennen: viele Bluetooth-Fernbedienungen (z. B. waipu.tv) melden sich als
+# vollständige Tastatur (mit Buchstabentasten) – dann reicht "Pfeiltasten, aber keine Buchstaben" nicht.
+REMOTE_NAME_RE = re.compile(r"(?i)fernbedienung|remote|\brc\b|waipu|fire ?tv|magenta|g20|g10|air ?mouse|telecomando|télécommande")
 
 # CEC "User Control Pressed" (Opcode 0x44) -> Linux-Tastencode
 CEC_KEYS = {
@@ -42,6 +61,7 @@ CEC_KEYS = {
     0x09: "KEY_HOMEPAGE", 0x0A: "KEY_CONFIG", 0x0B: "KEY_COMPOSE", 0x0D: "BACK",
     0x20: "KEY_0", 0x21: "KEY_1", 0x22: "KEY_2", 0x23: "KEY_3", 0x24: "KEY_4", 0x25: "KEY_5",
     0x26: "KEY_6", 0x27: "KEY_7", 0x28: "KEY_8", 0x29: "KEY_9", 0x2B: "KEY_ENTER",
+    0x10: "KEY_HOMEPAGE", 0x11: "KEY_COMPOSE", 0x91: "BACK",   # Top-Menü, Inhalte-Menü, "Return" (Samsung/Philips)
     0x30: "KEY_PAGEUP", 0x31: "KEY_PAGEDOWN", 0x35: "INFO", 0x41: "KEY_VOLUMEUP", 0x42: "KEY_VOLUMEDOWN",
     0x43: "KEY_MUTE", 0x44: "KEY_PLAYCD", 0x45: "KEY_STOPCD", 0x46: "KEY_PAUSECD", 0x48: "KEY_REWIND",
     0x49: "KEY_FASTFORWARD", 0x4B: "KEY_NEXTSONG", 0x4C: "KEY_PREVIOUSSONG", 0x53: "KEY_E",
@@ -54,6 +74,21 @@ CONTEXT_KEYS = {
 }
 # OK-/Mitte-Tasten, die als Enter weitergegeben werden (Android-TV-Fernbedienungen senden KEY_SELECT = DPAD_CENTER)
 OK_KEYS = {"KEY_SELECT", "KEY_OK"}
+# Mausmodus: Pfeiltasten bewegen einen Mauszeiger, OK klickt (für Apps ohne Fernbedienungs-Steuerung, z. B. Play Store)
+LONG_OK = 0.8
+FORWARD_KEYS = ["KEY_BACK", "KEY_HOMEPAGE", "KEY_POWER", "KEY_MENU", "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_MUTE",
+                "KEY_PLAYPAUSE", "KEY_PLAY", "KEY_PAUSE", "KEY_STOP", "KEY_NEXTSONG", "KEY_PREVIOUSSONG",
+                "KEY_REWIND", "KEY_FASTFORWARD", "KEY_RED", "KEY_GREEN", "KEY_YELLOW", "KEY_BLUE", "KEY_INFO",
+                "KEY_EPG", "KEY_TV", "KEY_SEARCH", "KEY_ESC", "KEY_BACKSPACE", "KEY_SELECT", "KEY_OK"]
+
+# Tasten, die die Handy-Fernbedienung über die virtuelle Tastatur auslösen darf
+PHONE_KEYS = {"KEY_UP", "KEY_DOWN", "KEY_LEFT", "KEY_RIGHT", "KEY_ENTER", "BACK", "KEY_PLAYPAUSE"}
+# Notausgang: Zurück lange gedrückt halten -> Startseite (funktioniert in jeder App)
+BACK_CODES = {getattr(E, n) for n in ("KEY_BACK", "KEY_ESC", "KEY_EXIT") if E and hasattr(E, n)}
+LONG_PRESS = 1.5
+MOUSE_DIRS = {getattr(E, n): d for n, d in (("KEY_UP", (0, -1)), ("KEY_DOWN", (0, 1)), ("KEY_LEFT", (-1, 0)),
+                                             ("KEY_RIGHT", (1, 0)))} if E else {}
+OK_CODES = {getattr(E, n) for n in ("KEY_ENTER", "KEY_SELECT", "KEY_OK", "KEY_KPENTER") if E and hasattr(E, n)}
 CEC_ACTIONS = {0x40: "power_key", 0x6B: "power_key", 0x6C: "standby", 0x6D: "wake"}  # Power, Power-Toggle, Off, On
 
 
@@ -62,6 +97,29 @@ def tv_home():
         return pwd.getpwnam("tv").pw_dir
     except KeyError:
         return "/home/tv"
+
+
+def fmt_pa(pa):
+    return f"{pa >> 12 & 15:x}.{pa >> 8 & 15:x}.{pa >> 4 & 15:x}.{pa & 15:x}"
+
+
+def parse_edid_physical_address(edid):
+    """HDMI-Adresse aus dem HDMI-Herstellerblock (CEA-861-Erweiterung) – None, wenn nicht vorhanden/ungültig."""
+    if len(edid) < 256 or edid[:8] != b"\x00\xff\xff\xff\xff\xff\xff\x00":
+        return None
+    for off in range(128, len(edid) - 127, 128):
+        block = edid[off:off + 128]
+        if block[0] != 0x02:
+            continue
+        end = block[2] if 4 <= block[2] <= 127 else 4
+        i = 4
+        while i < end:
+            tag, length = block[i] >> 5, block[i] & 0x1F
+            if tag == 3 and length >= 5 and block[i + 1:i + 4] == b"\x03\x0c\x00":
+                pa = block[i + 4] << 8 | block[i + 5]
+                return pa if pa not in (0, 0xFFFF) else None
+            i += 1 + length
+    return None
 
 
 def load_settings():
@@ -83,6 +141,168 @@ def api(path, body):
         return None
 
 
+class IrBox:
+    """WangertTV IR: ESP32-S3-BOX-3 mit Sensor-Dock an USB (Infrarot empfangen und senden).
+
+    Spricht Textzeilen über USB-Seriell (/dev/wangerttv-ir, udev-Regel 90-wangerttv-wakeup.rules).
+    """
+    PRODUCT = "WangertTV IR"
+    SLOTS = ("pwr", "tvp", "avp", "avon", "avoff")
+
+    def __init__(self, on_power):
+        self.on_power = on_power
+        self.fd = None
+        self.path = None
+        self.lock = threading.Lock()
+        self.status = {"connected": False, "fw": "", "slots": {}, "last": "", "last_ts": 0}
+        self.waiters = []        # [(präfixe, event, ergebnis-dict)]
+
+    # ------------------------------------------------------------------ Gerät finden
+    def find(self):
+        if os.path.exists("/dev/wangerttv-ir"):
+            return os.path.realpath("/dev/wangerttv-ir")
+        for tty in sorted(os.listdir("/sys/class/tty")) if os.path.isdir("/sys/class/tty") else []:
+            if not tty.startswith("ttyACM"):
+                continue
+            dev = os.path.realpath(f"/sys/class/tty/{tty}/device")
+            for cand in (dev, os.path.dirname(dev)):
+                try:
+                    with open(os.path.join(cand, "product"), encoding="utf-8") as fh:
+                        if fh.read().strip() == self.PRODUCT:
+                            return f"/dev/{tty}"
+                except OSError:
+                    continue
+        return None
+
+    def open(self, path):
+        import termios
+        import tty
+        fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        try:
+            tty.setraw(fd)
+            attrs = termios.tcgetattr(fd)
+            attrs[2] |= termios.CLOCAL | termios.CREAD
+            termios.tcsetattr(fd, termios.TCSANOW, attrs)
+        except termios.error:
+            pass
+        return fd
+
+    def write(self, line):
+        with self.lock:
+            fd = self.fd
+        if fd is None:
+            return False
+        try:
+            os.write(fd, (line + "\n").encode())
+            return True
+        except OSError:
+            return False
+
+    # ------------------------------------------------------------------ Befehle mit Antwort
+    def request(self, line, prefixes, timeout):
+        waiter = (prefixes, threading.Event(), {})
+        with self.lock:
+            self.waiters.append(waiter)
+        if not self.write(line):
+            with self.lock:
+                self.waiters.remove(waiter)
+            return None
+        waiter[1].wait(timeout)
+        with self.lock:
+            if waiter in self.waiters:
+                self.waiters.remove(waiter)
+        return waiter[2].get("line")
+
+    def send_slot(self, slot):
+        if self.status["slots"].get(slot, "-") in ("-", ""):
+            return False
+        res = self.request(f"send {slot}", ("sent ",), 3)
+        return bool(res and res.endswith(" ok"))
+
+    def learn(self, slot):
+        res = self.request(f"learn {slot}", ("learned ", "learn_timeout", "error"), 28)
+        self.request("status", ("status ",), 2)
+        if res and res.startswith("learned "):
+            return {"ok": True, "slot": slot, "code": res.split(" ", 2)[2] if res.count(" ") >= 2 else ""}
+        return {"ok": False, "message": "timeout" if not res or res.startswith("learn_timeout") else res}
+
+    # ------------------------------------------------------------------ Lesen
+    def handle(self, line):
+        if not line.startswith("EV "):
+            return
+        ev = line[3:].strip()
+        if ev == "key power":
+            log.info("IR-Box: Ein/Aus-Taste")
+            self.write("ack")      # bestätigen – sonst nimmt die BOX-3 an, dass der PC schläft
+            threading.Thread(target=self.on_power, daemon=True).start()
+        elif ev.startswith("diag "):
+            self.status["diag"] = ev[5:]
+            log.info("IR-Box Diagnose: %s", ev[5:])
+        elif ev.startswith("status "):
+            fw = re.search(r"fw=(\S+)", ev)
+            slots = re.search(r"slots=(\S+)", ev)
+            self.status["fw"] = fw.group(1) if fw else ""
+            if slots:
+                self.status["slots"] = dict(x.split("=", 1) for x in slots.group(1).split(",") if "=" in x)
+        elif ev.startswith("ir "):
+            self.status["last"] = ev[3:]
+            self.status["last_ts"] = time.time()
+        with self.lock:
+            waiters = list(self.waiters)
+        for prefixes, event, result in waiters:
+            if any(ev.startswith(p) for p in prefixes):
+                result["line"] = ev
+                event.set()
+
+    def loop(self):
+        buf = b""
+        while True:
+            if self.fd is None:
+                path = self.find()
+                if not path:
+                    time.sleep(3)
+                    continue
+                try:
+                    fd = self.open(path)
+                except OSError as exc:
+                    log.warning("IR-Box %s nicht zu öffnen: %s", path, exc)
+                    time.sleep(5)
+                    continue
+                with self.lock:
+                    self.fd, self.path = fd, path
+                self.status["connected"] = True
+                log.info("IR-Box verbunden: %s", path)
+                buf = b""
+                self.write("status")
+            try:
+                ready, _, _ = select.select([self.fd], [], [], 2)
+                if not ready:
+                    continue
+                chunk = os.read(self.fd, 1024)
+                if not chunk:
+                    raise OSError("getrennt")
+                buf += chunk
+                while b"\n" in buf:
+                    raw, buf = buf.split(b"\n", 1)
+                    self.handle(raw.decode("utf-8", "replace").strip())
+                if len(buf) > 4096:
+                    buf = b""
+            except OSError:
+                log.info("IR-Box getrennt")
+                with self.lock:
+                    fd, self.fd = self.fd, None
+                try:
+                    os.close(fd)
+                except (OSError, TypeError):
+                    pass
+                self.status["connected"] = False
+                time.sleep(2)
+
+
+# Quellen, bei denen klar ist, dass Fernseher/Receiver gerade den umgekehrten Zustand haben (Umschalt-Codes erlaubt)
+TOGGLE_SOURCES = {"key", "phone", "web", "ui", "remote", "timer"}
+
+
 class Remote:
     def __init__(self):
         self.settings = load_settings()
@@ -91,10 +311,23 @@ class Remote:
         self.learn_waiters = []
         self.devices = {}         # Pfad -> InputDevice
         self.cec_proc = None
-        self.cec_state = {"adapter": False, "tv_power": "", "tv_vendor": "", "port": ""}
+        self.cec_state = {"adapter": False, "tv_power": "", "tv_vendor": "", "port": "", "devices": [], "info": {},
+                          "logical": "", "avr": False, "avr_volume": None, "avr_mute": False, "active": None}
+        self.cec_scan_block = None
+        self.cec_lock = threading.Lock()
         self.phys_addr = None
         self.uinput = None
         self._last_status = None
+        self.hold = {}            # (Gerät, Taste) -> [Startzeit, ausgelöst]
+        self.mouse = None
+        self.mouse_on = False
+        self.grabbed = set()
+        self.nav_held = set()
+        self.ok_down = None           # [Zeit, Mausmodus umgeschaltet]
+        self.uinput_caps = set()
+        self.last_input = time.time()
+        self.ir = IrBox(lambda: (setattr(self, "last_input", time.time()),
+                                 api("/api/remote/action", {"action": "power_key", "source": "ir"})))
 
     # ------------------------------------------------------------------ Virtuelle Tastatur
     def make_uinput(self):
@@ -103,11 +336,111 @@ class Remote:
         names = {v for v in CEC_KEYS.values() if v.startswith("KEY_")}
         for variants in CONTEXT_KEYS.values():
             names.update(variants.values())
+        names.update(FORWARD_KEYS)
+        names.update(f"KEY_{i}" for i in range(10))
         caps = [getattr(E, n) for n in sorted(names) if hasattr(E, n)]
+        self.uinput_caps = set(caps)
         try:
             self.uinput = evdev.UInput({E.EV_KEY: caps}, name=UINPUT_NAME)
         except Exception as exc:  # noqa: BLE001
             log.error("uinput nicht verfügbar: %s", exc)
+        try:
+            self.mouse = evdev.UInput({E.EV_KEY: [E.BTN_LEFT, E.BTN_RIGHT],
+                                       E.EV_REL: [E.REL_X, E.REL_Y, E.REL_WHEEL]}, name=MOUSE_NAME)
+        except Exception as exc:  # noqa: BLE001
+            log.error("Maus (uinput) nicht verfügbar: %s", exc)
+
+    # ------------------------------------------------------------------ Mausmodus
+    def is_remote(self, dev):
+        """Fernbedienung (hat Pfeiltasten, aber keine Buchstaben) – echte Tastaturen werden nie umgeleitet."""
+        try:
+            keys = set(dev.capabilities().get(E.EV_KEY, []))
+        except OSError:
+            return False
+        if dev.name.startswith("WangertTV") or E.KEY_UP not in keys:
+            return False
+        return E.KEY_Q not in keys or bool(REMOTE_NAME_RE.search(dev.name))
+
+    def set_mouse(self, on, why=""):
+        if on == self.mouse_on or (on and not self.mouse):
+            return
+        self.mouse_on = on
+        self.nav_held.clear()
+        for path, dev in list(self.devices.items()):
+            if not self.is_remote(dev):
+                continue
+            try:
+                if on:
+                    dev.grab()
+                    self.grabbed.add(path)
+                elif path in self.grabbed:
+                    dev.ungrab()
+            except OSError:
+                pass
+        if not on:
+            self.grabbed.clear()
+        log.info("Mausmodus %s (%s)", "an" if on else "aus", why)
+        self.write_status()
+
+    def mouse_move_loop(self):
+        speed = 5.0
+        while self.mouse_on and self.nav_held:
+            dx = sum(MOUSE_DIRS[c][0] for c in list(self.nav_held))
+            dy = sum(MOUSE_DIRS[c][1] for c in list(self.nav_held))
+            try:
+                if dx:
+                    self.mouse.write(E.EV_REL, E.REL_X, int(dx * speed))
+                if dy:
+                    self.mouse.write(E.EV_REL, E.REL_Y, int(dy * speed))
+                self.mouse.syn()
+            except OSError:
+                return
+            speed = min(30.0, speed * 1.07 + 0.3)
+            time.sleep(0.016)
+
+    def mouse_click(self, button=None):
+        button = button or E.BTN_LEFT
+        self.mouse.write(E.EV_KEY, button, 1)
+        self.mouse.syn()
+        time.sleep(0.03)
+        self.mouse.write(E.EV_KEY, button, 0)
+        self.mouse.syn()
+
+    def mouse_event(self, dev, code, value):
+        """Taste einer Fernbedienung im Mausmodus. Liefert True, wenn sie hier verarbeitet wurde."""
+        if code in MOUSE_DIRS:
+            if value == 1:
+                start = not self.nav_held
+                self.nav_held.add(code)
+                if start:
+                    threading.Thread(target=self.mouse_move_loop, daemon=True).start()
+            elif value == 0:
+                self.nav_held.discard(code)
+            return True
+        if code in OK_CODES:
+            now = time.monotonic()
+            if value == 1:
+                self.ok_down = [now, False]
+            elif value == 2 and self.ok_down and not self.ok_down[1] and now - self.ok_down[0] >= LONG_OK:
+                self.ok_down[1] = True
+                self.set_mouse(False, "OK lange gedrückt")
+            elif value == 0 and self.ok_down:
+                if not self.ok_down[1]:
+                    self.mouse_click()
+                self.ok_down = None
+            return True
+        if code in (E.KEY_PAGEUP, E.KEY_PAGEDOWN, E.KEY_CHANNELUP, E.KEY_CHANNELDOWN):
+            if value in (1, 2):
+                self.mouse.write(E.EV_REL, E.REL_WHEEL, 1 if code in (E.KEY_PAGEUP, E.KEY_CHANNELUP) else -1)
+                self.mouse.syn()
+            return True
+        return False
+
+    def forward(self, code, value):
+        """Tasten einer umgeleiteten Fernbedienung unverändert weitergeben (Lautstärke, Zurück, Ein/Aus …)."""
+        if self.uinput and code in self.uinput_caps:
+            self.uinput.write(E.EV_KEY, code, value)
+            self.uinput.syn()
 
     def tap(self, keyname):
         if keyname in CONTEXT_KEYS:
@@ -121,17 +454,37 @@ class Remote:
         self.uinput.write(E.EV_KEY, code, 0)
         self.uinput.syn()
 
-    # ------------------------------------------------------------------ HDMI-CEC
+    # ------------------------------------------------------------------ HDMI-CEC (Pulse-Eight USB-CEC-Adapter)
     def cec_send(self, line):
         proc = self.cec_proc
         if proc and proc.poll() is None:
             try:
-                proc.stdin.write(line + "\n")
-                proc.stdin.flush()
+                with self.cec_lock:
+                    proc.stdin.write(line + "\n")
+                    proc.stdin.flush()
                 return True
             except OSError:
                 return False
         return False
+
+    @staticmethod
+    def cec_adapter_info():
+        """Liest `cec-client -l`: gefundene Adapter mit Anschluss und Firmware."""
+        try:
+            out = subprocess.run(["cec-client", "-l"], capture_output=True, text=True, check=False, timeout=20).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        m = re.search(r"Found devices:\s*(\d+)", out)
+        if not m or int(m.group(1)) == 0:
+            return None
+        info = {}
+        for key, label in (("com", "com port"), ("vendor", "vendor id"), ("product", "product id"),
+                           ("firmware", "firmware version"), ("build", "firmware build date")):
+            mm = re.search(rf"^{label}:\s*(.+)$", out, re.M)
+            if mm:
+                info[key] = mm.group(1).strip()
+        info["name"] = "Pulse-Eight USB-CEC" if info.get("vendor", "").lower() == "2548" else "CEC-Adapter"
+        return info
 
     def cec_loop(self):
         if not shutil.which("cec-client"):
@@ -140,77 +493,202 @@ class Remote:
         while True:
             cec = self.settings.get("cec", {})
             if cec.get("enabled") is False:
-                self.cec_state["adapter"] = False
+                self.cec_state.update(adapter=False, devices=[])
+                self.write_status()
                 time.sleep(30)
                 continue
-            out = subprocess.run(["cec-client", "-l"], capture_output=True, text=True, check=False).stdout
-            m = re.search(r"Found devices:\s*(\d+)", out)
-            if not m or int(m.group(1)) == 0:
-                self.cec_state["adapter"] = False
+            info = self.cec_adapter_info()
+            if not info:
+                self.cec_state.update(adapter=False, devices=[], info={})
                 self.write_status()
                 time.sleep(20)
                 continue
             name = (self.settings.get("device_name") or "WangertTV Box")[:14]
-            cmd = ["cec-client", "-t", "p", "-d", "8", "-o", name]
+            # -d 13 = Fehler + Hinweise (eigene Adressen) + Datenverkehr (Tasten, Ein/Aus, Lautstärke)
+            cmd = ["cec-client", "-t", "p", "-d", "13", "-o", name]
             port = int(cec.get("hdmi_port") or 0)
             if port:
-                cmd += ["-p", str(port)]
-            log.info("Starte %s", " ".join(cmd))
+                # Box hängt am Fernseher (Basis 0) oder an einem HDMI-Eingang des AV-Receivers (Basis 5)
+                cmd += ["-b", "5" if cec.get("via") == "avr" else "0", "-p", str(port)]
+            if info.get("com"):
+                cmd.append(info["com"])
+            log.info("Starte %s (%s, Firmware %s)", " ".join(cmd), info.get("name"), info.get("firmware", "?"))
             self.cec_proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                              stderr=subprocess.STDOUT, text=True, bufsize=1)
-            self.cec_state["adapter"] = True
+            self.cec_state.update(adapter=True, info=info, devices=[], logical="", avr=False)
+            self.cec_scan_block = None
             self.write_status()
             threading.Timer(6, self.cec_startup).start()
             for line in self.cec_proc.stdout:
-                self.cec_line(line.strip())
+                try:
+                    self.cec_line(line.rstrip("\n"))
+                except Exception:  # noqa: BLE001
+                    log.exception("CEC-Zeile: %s", line.strip()[:200])
             self.cec_state["adapter"] = False
             self.write_status()
             log.warning("cec-client beendet – neuer Versuch in 5 s")
             time.sleep(5)
 
+    @staticmethod
+    def edid_physical_address():
+        """Eigene HDMI-Adresse (z. B. 1.1.0.0) aus den EDID-Daten des angeschlossenen Fernsehers/Receivers.
+
+        Der Bildschirm teilt jedem Eingang im HDMI-Herstellerblock (CEA-861, IEEE-OUI 00-0C-03) seine Adresse zu –
+        damit findet der Fernseher die Box auch hinter einem AV-Receiver, ohne dass man den Anschluss einstellen muss."""
+        for path in sorted(glob.glob("/sys/class/drm/card*-HDMI-A-*/edid")):
+            try:
+                with open(os.path.dirname(path) + "/status", encoding="utf-8") as fh:
+                    if fh.read().strip() != "connected":
+                        continue
+                with open(path, "rb") as fh:
+                    edid = fh.read()
+            except OSError:
+                continue
+            pa = parse_edid_physical_address(edid)
+            if pa:
+                return pa
+        return None
+
     def cec_startup(self):
-        if self.settings.get("cec", {}).get("tv_on_with_box", True):
+        cec = self.settings.get("cec", {})
+        if not int(cec.get("hdmi_port") or 0):
+            pa = self.edid_physical_address()
+            if pa and pa != self.phys_addr:
+                log.info("CEC: eigene HDMI-Adresse laut EDID %s", fmt_pa(pa))
+                self.cec_send(f"pa {pa:04x}")
+                self.phys_addr = pa
+                self.cec_state["port"] = fmt_pa(pa)
+                time.sleep(1)
+        if cec.get("tv_on_with_box", True):
             self.cec_send("on 0")
             time.sleep(1)
             self.cec_send("as")
+            self.cec_menu_active()
         self.cec_send("pow 0")
+        time.sleep(2)
+        self.cec_rescan()
+
+    def cec_menu_active(self):
+        """Manche Fernseher (u. a. Philips EasyLink, LG) leiten Fernbedienungstasten erst weiter, wenn die Box
+        "Menü aktiv" meldet (CEC Menu Status 0x8E)."""
+        la = self.cec_state.get("logical")
+        if la not in ("", None):
+            self.cec_send(f"tx {int(la):x}0:8e:00")
+
+    def cec_rescan(self):
+        """Geräte am HDMI-Bus abfragen (Fernseher, AV-Receiver/Soundbar …) – Ergebnis kommt als Textblock."""
+        self.cec_send("scan")
+        self.cec_send("gas")       # Lautstärke/Stumm des Receivers
+
+    def _cec_scan_line(self, line):
+        """Wertet die Ausgabe von "scan" aus. Liefert True, wenn die Zeile dazugehört."""
+        m = re.match(r"device #([0-9A-F]):\s*(.+)$", line, re.I)
+        if m:
+            if self.cec_scan_block is None:
+                self.cec_scan_block = []
+            self.cec_scan_block.append({"la": int(m.group(1), 16), "type": m.group(2).strip()})
+            return True
+        if self.cec_scan_block is None:
+            return False
+        if line.startswith("currently active source"):
+            devices = [d for d in self.cec_scan_block if d.get("la") not in (14, 15)]
+            self.cec_scan_block = None
+            mine = {int(self.cec_state["logical"])} if str(self.cec_state.get("logical", "")).isdigit() else set()
+            self.cec_state["devices"] = [d for d in devices if d["la"] not in mine]
+            tv = next((d for d in devices if d["la"] == 0), None)
+            if tv:
+                self.cec_state["tv_vendor"] = tv.get("vendor", "")
+                if tv.get("power"):
+                    self.cec_state["tv_power"] = tv["power"]
+            self.cec_state["avr"] = any(d["la"] == 5 for d in devices)
+            self.write_status()
+            return True
+        m = re.match(r"(address|active source|vendor|osd string|power status|CEC version):\s*(.*)$", line)
+        if m and self.cec_scan_block:
+            key = {"address": "addr", "active source": "active", "vendor": "vendor", "osd string": "name",
+                   "power status": "power", "CEC version": "version"}[m.group(1)]
+            val = m.group(2).strip()
+            self.cec_scan_block[-1][key] = (val == "yes") if key == "active" else val
+            return True
+        return line.strip() in ("", "CEC bus information", "===================") or line.startswith("language:")
+
+    def _cec_other_source(self, phys):
+        """Fernseher zeigt jetzt einen anderen Eingang (Konsole, Receiver-Quelle …)."""
+        if self.phys_addr is None or phys == self.phys_addr:
+            return
+        if self.cec_state.get("active") is not False:
+            self.cec_state["active"] = False
+            log.info("CEC: anderer Eingang aktiv (%s)", fmt_pa(phys))
+            if self.settings.get("cec", {}).get("pause_on_switch", True):
+                api("/api/remote/action", {"action": "pause_all", "source": "cec"})
 
     def cec_line(self, line):
+        if line.startswith(("TRAFFIC:", "ERROR:", "NOTICE:", "WARNING:")) and " 0f:87" not in line:
+            LOG_RING.append(f"{time.strftime('%H:%M:%S')} CEC {' '.join(line.split())[:180]}")
+        if self._cec_scan_line(line):
+            return
+        m = re.search(r"logical address\(es\) = .*?\((\d+)\)", line)
+        if m:
+            self.cec_state["logical"] = m.group(1)
         pa = re.search(r"physical address:?\s*([0-9a-f])\.([0-9a-f])\.([0-9a-f])\.([0-9a-f])", line, re.I)
-        if pa:
+        if pa and "reported its physical address" not in line:
             a, b, c, d = (int(x, 16) for x in pa.groups())
             self.phys_addr = (a << 12) | (b << 8) | (c << 4) | d
             self.cec_state["port"] = f"{a}.{b}.{c}.{d}"
-        if "power status:" in line:
-            self.cec_state["tv_power"] = line.split("power status:", 1)[1].strip()
+        m = re.search(r"changing our physical address to ([0-9A-F]{4})", line, re.I)
+        if m:
+            self.phys_addr = int(m.group(1), 16)
+            self.cec_state["port"] = fmt_pa(self.phys_addr)
+        if line.startswith("power status:"):
+            self.cec_state["tv_power"] = line.split(":", 1)[1].strip()
             self.write_status()
-        m = re.search(r"vendor\s*(?:id)?\s*[:=]\s*([A-Za-z][\w &-]+)", line)
-        if m and "TV" in line:
-            self.cec_state["tv_vendor"] = m.group(1).strip()
+            return
         m = re.search(r">>\s*([0-9a-f])([0-9a-f]):([0-9a-f]{2})((?::[0-9a-f]{2})*)", line, re.I)
         if not m:
             return
         src, opcode = int(m.group(1), 16), int(m.group(3), 16)
         params = [int(x, 16) for x in m.group(4).split(":") if x]
-        if src != 0:
-            return   # nur Nachrichten vom Fernseher
         cec = self.settings.get("cec", {})
+        if opcode == 0x7A and src == 5 and params:
+            # Lautstärke/Stumm vom AV-Receiver (Report Audio Status)
+            vol, mute = params[0] & 0x7F, bool(params[0] & 0x80)
+            self.cec_state["avr_volume"] = vol if vol <= 100 else None
+            self.cec_state["avr_mute"] = mute
+            api("/api/remote/volume_osd", {"level": self.cec_state["avr_volume"], "mute": mute, "source": "avr"})
+            self.write_status()
+            return
+        if opcode == 0x82 and len(params) >= 2 and src != 0:
+            # Active Source von einem anderen Gerät (z. B. Konsole oder Receiver-Quelle)
+            self._cec_other_source(params[0] << 8 | params[1])
+            return
+        if src != 0:
+            return   # Rest nur vom Fernseher
         if opcode == 0x44 and params:
             code = params[0]
             if code in CEC_ACTIONS:
                 api("/api/remote/action", {"action": CEC_ACTIONS[code], "source": "cec"})
             elif code in CEC_KEYS:
+                self.last_input = time.time()
                 self.handle_learned(f"cec:{code:02x}", CEC_KEYS[code], "TV-Fernbedienung (CEC)")
                 self.tap(CEC_KEYS[code])
         elif opcode == 0x36:   # Standby vom Fernseher
             self.cec_state["tv_power"] = "standby"
+            self.cec_state["active"] = None
             if cec.get("standby_with_tv", True):
                 api("/api/power", {"action": "standby", "source": "cec"})
-        elif opcode in (0x80, 0x86):   # Fernseher schaltet auf einen HDMI-Eingang – unseren?
-            target = params[-2:] if len(params) >= 2 else []
-            if self.phys_addr is not None and len(target) == 2 and (target[0] << 8 | target[1]) == self.phys_addr:
+        elif opcode == 0x8D:   # Menu Request: Fernseher fragt, ob die Box Tasten haben möchte
+            self.cec_menu_active()
+        elif opcode in (0x80, 0x86) and len(params) >= 2:   # Fernseher schaltet den Eingang um – auf unseren?
+            target = params[-2] << 8 | params[-1]
+            if self.phys_addr is not None and target == self.phys_addr:
                 self.cec_state["tv_power"] = "on"
+                self.cec_state["active"] = True
                 api("/api/power", {"action": "wake", "source": "cec"})
+            else:
+                self._cec_other_source(target)
+        elif opcode == 0x90 and params:   # Power Status
+            self.cec_state["tv_power"] = {0: "on", 1: "standby", 2: "in transition standby to on",
+                                          3: "in transition on to standby"}.get(params[0], "")
         self.write_status()
 
     # ------------------------------------------------------------------ Bluetooth/USB-Fernbedienungen
@@ -225,11 +703,17 @@ class Remote:
                 dev = evdev.InputDevice(path)
             except OSError:
                 continue
-            if dev.name == UINPUT_NAME or not dev.capabilities().get(E.EV_KEY):
+            if dev.name in (UINPUT_NAME, MOUSE_NAME) or not dev.capabilities().get(E.EV_KEY):
                 dev.close()
                 continue
             self.devices[path] = dev
             log.info("Eingabegerät: %s (%s)", dev.name, path)
+            if self.mouse_on and self.is_remote(dev):
+                try:
+                    dev.grab()
+                    self.grabbed.add(path)
+                except OSError:
+                    pass
         for path in list(self.devices):
             if not os.path.exists(path):
                 self.devices.pop(path).close()
@@ -261,8 +745,25 @@ class Remote:
                     for ev in dev.read():
                         if ev.type == E.EV_MSC and ev.code == E.MSC_SCAN:
                             scan_values[dev.path] = ev.value
-                        elif ev.type == E.EV_KEY and ev.value == 1:
-                            self.on_key(dev, ev.code, scan_values.pop(dev.path, None))
+                        elif ev.type == E.EV_KEY:
+                            if ev.value == 1 and dev.name != UINPUT_NAME:
+                                self.last_input = time.time()
+                                # Tastendruck nur im Speicher merken (für die Diagnose), nicht im System-Journal
+                                LOG_RING.append(f"{time.strftime('%H:%M:%S')} Taste {E.KEY.get(ev.code, ev.code)} von "
+                                                f"\"{dev.name}\" (Kontext {self.ctx}, Maus {'an' if self.mouse_on else 'aus'}, "
+                                                f"{'umgeleitet' if dev.path in self.grabbed else 'direkt'})")
+                            if self.mouse_on and dev.path in self.grabbed:
+                                self.on_hold(dev, ev.code, ev.value)
+                                if self.mouse_event(dev, ev.code, ev.value):
+                                    continue
+                                handled = self.on_key(dev, ev.code, scan_values.pop(dev.path, None)) if ev.value == 1 else False
+                                if not handled and ev.code != E.KEY_HOMEPAGE:
+                                    self.forward(ev.code, ev.value)
+                                continue
+                            if ev.value == 1:
+                                self.on_key(dev, ev.code, scan_values.pop(dev.path, None))
+                            self.on_hold(dev, ev.code, ev.value)
+                            self.long_ok(dev, ev.code, ev.value)
                 except OSError:
                     self.devices.pop(dev.path, None)
             sel.close()
@@ -275,17 +776,56 @@ class Remote:
         scan_match = f"scan:{scan:x}" if scan is not None else None
         unknown = name in ("KEY_UNKNOWN", f"KEY_{code}")
         if self.handle_learned(scan_match if unknown and scan_match else key_match, name, dev.name):
-            return
-        if name in OK_KEYS and dev.name != UINPUT_NAME:
+            return True
+        if name in OK_KEYS and dev.name != UINPUT_NAME and not self.mouse_on:
             # OK-Taste von Android-TV-Fernbedienungen (z. B. waipu.tv): sendet "Select" statt Enter –
             # Browser, Oberfläche und viele Apps kennen nur Enter. Daher zusätzlich Enter auslösen.
             self.tap("KEY_ENTER")
-            return
+            return True
+        mapped = any(m.get("match") in (key_match, scan_match) for m in self.settings.get("remote", {}).get("mappings", []))
+        if name == "KEY_HOMEPAGE" and not mapped and dev.name != UINPUT_NAME:
+            # Sway reagiert ebenfalls auf die Taste – doppelt schadet nicht, so klappt "Home" immer
+            threading.Thread(target=api, args=("/api/remote/action", {"action": "home"}), daemon=True).start()
+            return True
         for m in self.settings.get("remote", {}).get("mappings", []):
             if m.get("match") in (key_match, scan_match):
                 log.info("Taste %s -> %s", m["match"], m.get("action"))
                 threading.Thread(target=api, args=("/api/remote/action", {"action": m.get("action", "")}), daemon=True).start()
-                return
+                return True
+        return False
+
+    def long_ok(self, dev, code, value):
+        """OK lange drücken in einer App (Android, Web-Apps) schaltet den Mausmodus ein."""
+        if code not in OK_CODES or dev.name.startswith("WangertTV") or self.ctx not in ("android", "web"):
+            return
+        now = time.monotonic()
+        if value == 1:
+            self.ok_down = [now, False]
+        elif value == 2 and self.ok_down and not self.ok_down[1] and now - self.ok_down[0] >= LONG_OK:
+            self.ok_down[1] = True
+            self.set_mouse(True, "OK lange gedrückt")
+        elif value == 0:
+            self.ok_down = None
+
+    def on_hold(self, dev, code, value):
+        """Zurück-Taste lange drücken (1,5 s) = Startseite – Notausgang aus jeder App,
+        auch wenn eine App die Tasten nicht versteht oder hängt."""
+        if dev.name == UINPUT_NAME or code not in BACK_CODES:
+            return
+        key = (dev.path, code)
+        now = time.monotonic()
+        if value == 1:
+            self.hold[key] = [now, False]
+            return
+        start = self.hold.get(key)
+        if not start:
+            return
+        if value == 0:
+            self.hold.pop(key, None)
+        if not start[1] and now - start[0] >= LONG_PRESS:
+            start[1] = True
+            log.info("Zurück lange gedrückt -> Startseite")
+            threading.Thread(target=api, args=("/api/remote/action", {"action": "home"}), daemon=True).start()
 
     def handle_learned(self, match, name, device):
         with self.lock:
@@ -308,7 +848,7 @@ class Remote:
     # ------------------------------------------------------------------ Status / Steuerung
     def write_status(self):
         st = {"cec": dict(self.cec_state), "devices": sorted({d.name for d in self.devices.values()}),
-              "ctx": self.ctx}
+              "ctx": self.ctx, "mouse": self.mouse_on, "last_input": int(self.last_input // 30 * 30)}
         if st == self._last_status and time.time() - getattr(self, "_status_ts", 0) < 30:
             return
         self._last_status = st
@@ -319,34 +859,162 @@ class Remote:
         os.chmod(tmp, 0o644)
         os.replace(tmp, STATUS)
 
+    def ir_power(self, on, source):
+        """Fernseher/Receiver per Infrarot schalten (WangertTV IR an USB).
+
+        Umschalt-Codes (Ein/Aus auf einer Taste) nur, wenn der Zustand sicher ist – sonst würde z. B. ein Neustart
+        der Box den laufenden Fernseher ausschalten. Kam der Befehl von der Fernbedienung selbst ("ir"/"resume"),
+        hat sie den Fernseher schon geschaltet – dann nur den Receiver."""
+        ir = self.ir
+        if not ir.status["connected"]:
+            return False
+        slots = ir.status["slots"]
+        learned = lambda k: slots.get(k, "-") not in ("-", "")  # noqa: E731
+        sent = False
+        if learned("tvp") and source in TOGGLE_SOURCES:
+            sent |= ir.send_slot("tvp")
+            time.sleep(0.4)
+        discrete = "avon" if on else "avoff"
+        if learned(discrete):
+            sent |= ir.send_slot(discrete)
+        elif learned("avp") and (source in TOGGLE_SOURCES or source in ("ir", "resume")):
+            sent |= ir.send_slot("avp")
+        log.info("IR %s (Quelle %s): %s", "ein" if on else "aus", source, "gesendet" if sent else "nichts eingelernt")
+        return sent
+
     def command(self, req):
         cmd = req.get("cmd")
         if cmd == "ctx":
-            self.ctx = "kodi" if req.get("value") == "kodi" else "default"
+            value = req.get("value")
+            self.ctx = value if value in ("kodi", "home", "android", "web") else "default"
+            if self.ctx in ("home", "kodi"):
+                self.set_mouse(False, "Arbeitsfläche gewechselt")
+            elif self.ctx == "android" and self.settings.get("remote", {}).get("mouse_android", True):
+                self.set_mouse(True, "Android geöffnet")
+            elif self.ctx == "web":
+                self.set_mouse(False, "Web-App")
             return {"ok": True}
+        if cmd == "pointer":
+            # Handy-Touchpad: Mauszeiger relativ bewegen, scrollen, klicken (unabhängig vom Mausmodus)
+            if not self.mouse:
+                return {"ok": False}
+            try:
+                dx, dy = int(req.get("dx") or 0), int(req.get("dy") or 0)
+                scroll, click = int(req.get("scroll") or 0), int(req.get("click") or 0)
+                if dx:
+                    self.mouse.write(E.EV_REL, E.REL_X, max(-400, min(400, dx)))
+                if dy:
+                    self.mouse.write(E.EV_REL, E.REL_Y, max(-400, min(400, dy)))
+                if scroll:
+                    self.mouse.write(E.EV_REL, E.REL_WHEEL, max(-10, min(10, scroll)))
+                self.mouse.syn()
+                if click:
+                    self.mouse_click(E.BTN_RIGHT if click == 2 else E.BTN_LEFT)
+                self.last_input = time.time()
+            except (OSError, ValueError, TypeError):
+                return {"ok": False}
+            return {"ok": True}
+        if cmd == "mouse":
+            self.set_mouse(not self.mouse_on if req.get("value") == "toggle" else bool(req.get("value")), "Befehl")
+            return {"ok": True, "mouse": self.mouse_on}
+        if cmd == "android_text":
+            text = str(req.get("text", ""))[:500]
+            if not text:
+                return {"ok": False}
+            # Android "input text": Leerzeichen als %s; ohne Shell, daher keine weitere Maskierung nötig
+            try:
+                rc = subprocess.run(["waydroid", "shell", "--", "input", "text", text.replace(" ", "%s")],
+                                    capture_output=True, timeout=15, check=False).returncode
+            except (OSError, subprocess.TimeoutExpired):
+                rc = 1
+            return {"ok": rc == 0}
         if cmd == "learn":
             return self.learn(int(req.get("seconds", 15)))
         if cmd == "reload":
             old_port = self.settings.get("cec", {}).get("hdmi_port")
+            old_via = self.settings.get("cec", {}).get("via")
             old_name = self.settings.get("device_name")
             self.settings = load_settings()
-            if (old_port != self.settings.get("cec", {}).get("hdmi_port") or
-                    old_name != self.settings.get("device_name")) and self.cec_proc:
+            if (old_port != self.settings.get("cec", {}).get("hdmi_port") or old_via != self.settings.get("cec", {}).get("via")
+                    or old_name != self.settings.get("device_name")) and self.cec_proc:
                 self.cec_proc.terminate()   # mit neuem Namen/Port neu verbinden
             return {"ok": True}
         if cmd == "tv_on":
+            # Fernseher (0) und AV-Receiver/Soundbar (5) einschalten, dann diesen Eingang wählen
+            source = req.get("source", "boot")
             ok = self.cec_send("on 0")
+            ir = self.ir_power(True, source)
             time.sleep(0.8)
+            self.cec_send("on 5")
+            time.sleep(0.3)
             self.cec_send("as")
-            return {"ok": ok}
+            self.cec_state["active"] = True
+            self.cec_menu_active()
+            return {"ok": ok or ir}
         if cmd == "tv_off":
-            return {"ok": self.cec_send("standby 0")}
+            # Fernseher und AV-Receiver/Soundbar ausschalten (manche Fernseher schalten den Receiver nicht mit aus)
+            source = req.get("source", "key")
+            ok = self.cec_send("standby 0")
+            ir = self.ir_power(False, source)
+            time.sleep(0.3)
+            self.cec_send("standby 5")
+            return {"ok": ok or ir}
+        if cmd == "ir_status":
+            return {"ok": True, **self.ir.status}
+        if cmd == "ir_learn":
+            slot = req.get("slot", "")
+            if slot not in IrBox.SLOTS:
+                return {"ok": False, "message": "unknown_slot"}
+            if not self.ir.status["connected"]:
+                return {"ok": False, "message": "not_connected"}
+            return self.ir.learn(slot)
+        if cmd in ("ir_send", "ir_clear"):
+            slot = req.get("slot", "")
+            if slot not in IrBox.SLOTS:
+                return {"ok": False, "message": "unknown_slot"}
+            if cmd == "ir_send":
+                return {"ok": self.ir.send_slot(slot)}
+            res = self.ir.request(f"clear {slot}", ("cleared ",), 3)
+            self.ir.request("status", ("status ",), 2)
+            return {"ok": bool(res)}
+        if cmd == "ir_diag":
+            res = self.ir.request("diag", ("diag ",), 3)
+            return {"ok": bool(res), "diag": res[5:] if res else ""}
+        if cmd == "ir_cancel":
+            self.ir.write("cancel")
+            return {"ok": True}
         if cmd == "active":
-            return {"ok": self.cec_send("as")}
+            ok = self.cec_send("as")
+            self.cec_state["active"] = True
+            self.cec_menu_active()
+            return {"ok": ok}
         if cmd in ("volup", "voldown", "mute"):
-            return {"ok": self.cec_send(cmd)}
+            # Lautstärke am AV-Receiver/Soundbar per CEC (wirkt auch bei Dolby/DTS-Durchreichen)
+            ok = bool(self.cec_state.get("avr")) and self.cec_send(cmd)
+            if ok:
+                threading.Timer(0.4, self.cec_send, args=("gas",)).start()
+            return {"ok": ok}
+        if cmd == "cec_scan":
+            return {"ok": self.cec_send("pow 0") and (self.cec_rescan() or True)}
+        if cmd == "cec_restart":
+            if self.cec_proc and self.cec_proc.poll() is None:
+                self.cec_proc.terminate()
+            return {"ok": True}
+        if cmd == "key":
+            # Tastendruck von der Handy-Fernbedienung (nur Navigations-/Medientasten)
+            key = req.get("key", "")
+            if key not in PHONE_KEYS:
+                return {"ok": False, "message": "key_not_allowed"}
+            self.tap(key)
+            return {"ok": bool(self.uinput)}
+        if cmd == "idle":
+            return {"ok": True, "seconds": time.time() - self.last_input}
         if cmd == "status":
-            return {"ok": True, "cec": self.cec_state, "devices": sorted({d.name for d in self.devices.values()})}
+            return {"ok": True, "cec": self.cec_state, "devices": sorted({d.name for d in self.devices.values()}),
+                    "remotes": sorted({d.name for d in self.devices.values() if self.is_remote(d)}),
+                    "ctx": self.ctx, "mouse": self.mouse_on}
+        if cmd == "log":
+            return {"ok": True, "lines": list(LOG_RING)[-int(req.get("n") or 200):]}
         return {"ok": False, "message": "unknown"}
 
 
@@ -377,11 +1045,13 @@ def serve(remote):
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    logging.getLogger().addHandler(RingHandler())
     os.makedirs(RUN_DIR, exist_ok=True)
     remote = Remote()
     remote.make_uinput()
     threading.Thread(target=remote.cec_loop, daemon=True, name="cec").start()
     threading.Thread(target=remote.input_loop, daemon=True, name="input").start()
+    threading.Thread(target=remote.ir.loop, daemon=True, name="irbox").start()
 
     def refresher():
         while True:

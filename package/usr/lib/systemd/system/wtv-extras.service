@@ -1,0 +1,10 @@
+[Unit]
+Description=WangertTV – Zusatzkomponenten installieren (z. B. Spotify Connect)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-update --extras
+Nice=10
+TimeoutStartSec=30min

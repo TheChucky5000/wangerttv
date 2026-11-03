@@ -73,7 +73,20 @@ def channels():
              "KiKA HD", "DMAX", "sixx", "Tele 5"]
     groups = ["Öffentlich-Rechtlich"] * 3 + ["Privat"] * 5 + ["Öffentlich-Rechtlich"] * 3 + ["Nachrichten"] * 3 + \
              ["Öffentlich-Rechtlich"] * 3 + ["Privat"] * 3
-    return [{"name": n, "logo": "", "group": g, "number": i + 1} for i, (n, g) in enumerate(zip(names, groups))]
+    import time
+    shows = ["Tagesschau", "Wer weiß denn sowas?", "Lokalzeit", "Wer wird Millionär?", "Navy CIS", "The Voice of Germany",
+             "Das perfekte Dinner", "Mein Lokal, Dein Lokal", "Geheimnisvolle Natur", "Kulturzeit", "Der Tag",
+             "Nachrichten", "Reportage", "tagesschau24 extra", "Bares für Rares", "Die Simpsons", "Logo!", "Steel Buddies",
+             "Grey's Anatomy", "Star Trek"]
+    now = int(time.time())
+    out = []
+    for i, (n, g) in enumerate(zip(names, groups)):
+        start = now - (i * 7 % 40 + 5) * 60
+        end = start + (45 + i % 3 * 30) * 60
+        out.append({"name": n, "logo": "", "group": g, "number": i + 1,
+                    "now": {"title": shows[i], "start": start, "end": end},
+                    "next": {"title": shows[(i + 5) % len(shows)], "start": end, "end": end + 3600}})
+    return out
 
 
 def android_apps():

@@ -1,0 +1,32 @@
+#!/bin/sh
+# WangertTV: Leistungsprofil der CPU setzen (balanced | performance | quiet).
+# Intel (intel_pstate): Energy Performance Preference; sonst Governor. Läuft als root über wtv-power@.service.
+set -u
+profile="${1:-balanced}"
+case "$profile" in
+    performance) epp=performance;        gov=performance; boost=1 ;;
+    quiet)       epp=balance_power;      gov=powersave;   boost=0 ;;
+    balanced|*)  epp=balance_performance; gov=powersave;  boost=1; profile=balanced ;;
+esac
+for cpu in /sys/devices/system/cpu/cpu[0-9]*/cpufreq; do
+    [ -d "$cpu" ] || continue
+    if [ -w "$cpu/energy_performance_preference" ]; then
+        # EPP lässt sich nur im Governor "powersave" frei setzen (bei "performance" ist sie fest)
+        [ "$epp" = performance ] || echo powersave > "$cpu/scaling_governor" 2>/dev/null
+        echo "$epp" > "$cpu/energy_performance_preference" 2>/dev/null || true
+        [ "$epp" = performance ] && echo performance > "$cpu/scaling_governor" 2>/dev/null
+    elif [ -w "$cpu/scaling_governor" ]; then
+        if [ "$gov" = powersave ] && grep -qw schedutil "$cpu/scaling_available_governors" 2>/dev/null; then
+            [ "$profile" = balanced ] && gov=schedutil
+        fi
+        echo "$gov" > "$cpu/scaling_governor" 2>/dev/null || true
+    fi
+done
+# Turbo: im leisen Profil aus (weniger Hitze/Lüfter)
+if [ -w /sys/devices/system/cpu/intel_pstate/no_turbo ]; then
+    echo $((1 - boost)) > /sys/devices/system/cpu/intel_pstate/no_turbo 2>/dev/null || true
+elif [ -w /sys/devices/system/cpu/cpufreq/boost ]; then
+    echo "$boost" > /sys/devices/system/cpu/cpufreq/boost 2>/dev/null || true
+fi
+echo "Leistungsprofil: $profile"
+exit 0

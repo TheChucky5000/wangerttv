@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """wtvctl – Kommandozeilen-Steuerung für WangertTV (wird von Tastenkürzeln und Diensten genutzt).
 
-  wtvctl home | settings | power | standby | wake | volume up|down|mute | keyboard | action <aktion>
+  wtvctl home | settings | power | standby | wake | resume | volume up|down|mute | keyboard | action <aktion>
 """
 import json
 import os
@@ -46,6 +46,8 @@ def main(argv):
         post("/api/remote/action", {"action": "settings"})
     elif cmd == "power":
         post("/api/powerkey")
+    elif cmd == "resume":
+        post("/api/resumed")
     elif cmd in ("standby", "wake"):
         post("/api/power", {"action": cmd, "source": "key"})
     elif cmd == "volume" and len(argv) > 1:

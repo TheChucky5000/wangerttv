@@ -1,0 +1,6 @@
+[Unit]
+Description=WangertTV Bildmodus schon beim Start setzen (%I)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/wangerttv/bin/wtv-bootvideo %I

@@ -73,6 +73,33 @@ class Sway:
             return False
         return bool(ws.get("nodes") or ws.get("floating_nodes"))
 
+    def find_windows(self, pattern):
+        """Fenster, deren app_id/Klasse/Titel auf das Muster passen -> Liste von (Arbeitsfläche, Fenster-ID)."""
+        import re
+        if config.DEV:
+            return []
+        rc, out, _ = run(["swaymsg", "-t", "get_tree", "-r"], timeout=10)
+        if rc != 0:
+            return []
+        try:
+            tree = json.loads(out)
+        except ValueError:
+            return []
+        rx = re.compile(pattern, re.I)
+        hits = []
+
+        def walk(node, ws):
+            if node.get("type") == "workspace":
+                ws = node.get("name")
+            props = node.get("window_properties") or {}
+            names = [node.get("app_id") or "", props.get("class") or "", node.get("name") or ""]
+            if node.get("pid") and any(rx.search(n) for n in names if n):
+                hits.append((ws, node.get("id")))
+            for child in node.get("nodes", []) + node.get("floating_nodes", []):
+                walk(child, ws)
+        walk(tree, None)
+        return hits
+
     def _check_empty(self):
         name = self.focused
         if name != HOME_WS and not self.workspace_has_windows(name):
@@ -84,6 +111,29 @@ class Sway:
         if config.DEV:
             return
         threading.Thread(target=self._watch_loop, daemon=True, name="sway-watch").start()
+        threading.Thread(target=self._sync_loop, daemon=True, name="sway-sync").start()
+
+    def focused_workspace(self):
+        """Tatsächlich fokussierte Arbeitsfläche laut Sway (oder None)."""
+        rc, out, _ = run(["swaymsg", "-t", "get_workspaces", "-r"], timeout=5)
+        if rc != 0:
+            return None
+        try:
+            return next((w.get("name") for w in json.loads(out) if w.get("focused")), None)
+        except ValueError:
+            return None
+
+    def _sync_loop(self):
+        """Sicherheitsnetz: alle paar Sekunden mit Sway abgleichen, falls ein Ereignis verloren ging."""
+        while True:
+            time.sleep(8)
+            try:
+                name = self.focused_workspace()
+                if name and name != self.focused:
+                    log.info("Fokus abgeglichen: %s -> %s", self.focused, name)
+                    self._set_focused(name)
+            except Exception:  # noqa: BLE001
+                log.exception("Sway-Abgleich")
 
     def _watch_loop(self):
         decoder = json.JSONDecoder()
@@ -113,7 +163,10 @@ class Sway:
         change = event.get("change")
         if "current" in event and change in ("focus", "init"):
             cur = event.get("current") or {}
-            if cur.get("name"):
+            # "init" kommt auch für Arbeitsflächen, die im Hintergrund entstehen (z. B. Spotify als Connect-Ziel) –
+            # nur zählen, wenn sie wirklich den Fokus hat. Sonst hält WangertTV die Startseite für eine App
+            # (Fernbedienung im Web-App-Modus, langes OK schaltet den Mausmodus ein).
+            if cur.get("name") and (change == "focus" or cur.get("focused")):
                 self._set_focused(cur["name"])
         elif "container" in event and change in ("close", "move"):
             # kurz warten, damit Sway den Baum aktualisiert hat
