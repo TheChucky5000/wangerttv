@@ -88,7 +88,7 @@ build_deb() {
     find "$stage" -name '.keep' -delete
     find "$stage" -type d -exec chmod 0755 {} +
     find "$stage" -type f -exec chmod 0644 {} +
-    chmod 0755 "$stage"/usr/lib/wangerttv/bin/* "$stage"/DEBIAN/postinst "$stage"/DEBIAN/postrm
+    chmod 0755 "$stage"/usr/lib/wangerttv/bin/* "$stage"/usr/lib/systemd/system-sleep/* "$stage"/DEBIAN/postinst "$stage"/DEBIAN/postrm "$stage"/etc/grub.d/*
     dpkg-deb --root-owner-group -Zxz -b "$stage" "$OUT/wangerttv_${VERSION}_all.deb" >/dev/null
     rm -rf "$stage"
     (cd "$OUT" && sha256sum "wangerttv_${VERSION}_all.deb" > "wangerttv_${VERSION}_all.deb.sha256")

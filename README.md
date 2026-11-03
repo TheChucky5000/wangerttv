@@ -17,6 +17,16 @@ x86-64-Mini-PC mit Intel- oder AMD-Grafik.
 
 ## Was die Box kann (Geekom Mini IT11)
 
+**Fernsehen aus einem Guss (ab 1.0.38)**
+- Eigenes **TV-Programm** (Raster mit Jetzt-Linie, Farbtasten: Rot = jetzt, Grün = 20:15, Gelb = +1 Tag, Blau = Sender sortieren,
+  Zifferntasten = Sendernummer) – Kodi dient nur noch als unsichtbare Wiedergabe
+- **Info-Leiste beim Umschalten** im WangertTV-Stil: Sender, Sendung, Fortschritt, Danach – dazu **Bildformat
+  (SD/HD/Full HD/UHD, HDR10/HDR10+/Dolby Vision/HLG, Codec)** und **Tonformat (z. B. Dolby Digital Plus 5.1, „Bitstream“
+  = unverändert an den Receiver)**; schnelles Durchschalten mit Vorschau, Zifferneingabe mit den eigenen Sendernummern
+- **Sender sortieren & ausblenden** (am Fernseher und in der Web-Oberfläche), **offizielle Senderlogos**, HD/UHD-Abzeichen
+- **Intelligente Startseite**: Begrüßung nach Tageszeit, „Jetzt für dich“, „Deine Sendungen“ mit „Neue Folge“,
+  „Heute für dich im TV“, Morgenmodus (Wetter, Nachrichten, Morgenradio), automatische Erinnerungen – alles lernt nur lokal
+
 **Bild**
 - Ausgabe bis **4K UHD mit 60 Hz** über HDMI 2.0 (Oberfläche wird automatisch passend skaliert)
 - Hardware-Dekodierung (Intel Iris Xe, VA-API): **H.264, H.265/HEVC 8/10-bit, VP9 8/10-bit, AV1 8/10-bit, MPEG-2, VC-1** – 4K-Filme ruckelfrei
@@ -41,7 +51,8 @@ dav1d (AV1), libbluray, libdvdnav, Google Chrome mit Widevine (DRM für Netflix 
 **Streaming**
 - **YouTube** in der TV-Oberfläche (bis 4K), **Netflix**, **Prime Video**, **Disney+**, **Joyn**, **Twitch** über Google Chrome
   – Hinweis: Netflix & Co. erlauben unter Linux im Browser **höchstens 720p** (Kopierschutz Widevine L3). Das ist eine Vorgabe der Anbieter.
-- **Spotify** (App) + **Spotify Connect** (Box als Lautsprecher in der Spotify-App, Premium nötig)
+- **Spotify** (Web-Player, mit Fernbedienung bedienbar) + **Spotify Connect** (Box als Lautsprecher in der Spotify-App, Premium nötig).
+  Die Spotify-Desktop-App gibt es zusätzlich unter „Alle Apps“ (nur mit Maus & Tastatur sinnvoll).
 - **AirPlay**: iPhone/iPad/Mac-Bildschirm samt Ton auf den Fernseher spiegeln
 - **Mediatheken**: ARD, ZDF, arte, 3sat … über MediathekView in Kodi; **Plex** und **Jellyfin** als App installierbar
 - **Android-Apps aus dem Google Play Store** (Waydroid). Einmalige Registrierung als „nicht zertifiziertes Gerät“ nötig.
@@ -52,9 +63,43 @@ dav1d (AV1), libbluray, libdvdnav, Google Chrome mit Widevine (DRM für Netflix 
 - **Sondertasten anlernen**: Netflix-, YouTube-, TV-, Programm-Taste … frei belegen
 - **HDMI-CEC** (mit Pulse-Eight USB-CEC-Adapter): normale TV-Fernbedienung steuert **alle** Apps, Fernseher geht mit an/aus
 - **Aus-Taste = Standby**: Wiedergabe stoppt, Bild + Fernseher aus; erneut drücken → alles wieder an
+- **Web-Apps mit Fernbedienung** (Netflix, Spotify, Prime Video, Disney+ …): Pfeiltasten springen zwischen Schaltflächen
+  und Feldern (blauer Rahmen), **OK öffnet in Eingabefeldern eine Bildschirmtastatur**. Läuft ein Video im Vollbild,
+  gehen die Tasten direkt an den Player.
+- **Mausmodus** (Android/Play Store, schwierige Webseiten): Pfeiltasten bewegen einen Mauszeiger, OK klickt.
+  In Android automatisch an; überall sonst **OK lange drücken** zum Umschalten. Auch über die Handy-Fernbedienung (🖱).
+- **Text vom Handy in Android** (z. B. Google-Anmeldung im Play Store): Handy-Fernbedienung → „Text senden“.
+- **Automatischer Standby** nach 4 Stunden ohne Tastendruck (einstellbar, 5 Minuten vorher ein Hinweis).
+- **Notausgang**: *Zurück* 1,5 Sekunden gedrückt halten oder *Home* drücken → Startseite, egal was gerade läuft
+- **Handy als Fernbedienung** (Einstellungen → Fernbedienung): QR-Code scannen – Steuerkreuz, OK, Zurück, Home,
+  Lautstärke, Ein/Aus und **Text direkt in Netflix & Co. tippen**. Ohne App, im selben WLAN.
+- **Web-Oberfläche für den PC** (Einstellungen → Gerät → Web-Oberfläche): Im Browser `http://<IP der Box>:8766/admin`
+  öffnen und mit der 6-stelligen PIN vom Fernseher anmelden. Dort lassen sich Live-TV (waipu.tv, M3U/EPG), Apps und
+  Reihenfolge, Ton, Gerätename, Design, CEC, Bildschirmschoner und Updates bequem einstellen und Apps am TV starten.
+  Passwörter werden nie angezeigt; Werksreset und Installation sind dort bewusst nicht möglich.
+- **Infrarot mit der ESP32-S3-BOX-3** (Ordner `esp32-ir`): Die BOX-3 mit Sensor-Dock per USB an die Box – sie empfängt
+  die Ein/Aus-Taste der Fernbedienung, schaltet Fernseher und Receiver per Infrarot und weckt die Box aus dem
+  Ruhezustand. Einlernen unter Einstellungen → Fernbedienung → Infrarot. Anleitung: `esp32-ir/README.md`.
+- **Ruhezustand ohne BIOS-Option:** WangertTV nutzt „Suspend-to-Idle“ (s2idle). Dabei bleiben USB und Bluetooth
+  wach – die BOX-3 weckt die Box auch dann, wenn das BIOS kein „Wake on USB“ anbietet (ca. 1–2 W im Ruhezustand).
+- **SSH-Zugang** (Einstellungen → Gerät → SSH-Zugang, auch in der Web-Oberfläche): standardmäßig **aus**. Beim
+  Einschalten erzeugt die Box ein zufälliges Passwort für den Benutzer `tv` und zeigt es am Fernseher an
+  (gilt auch für `sudo`). Anmelden am PC: `ssh tv@<IP der Box>` (Windows: PowerShell). Root-Anmeldung ist gesperrt.
 - **Texteingabe per Handy**: QR-Code scannen und lange Texte (WLAN-Passwort, IPTV-Adresse) am Handy tippen
 - Farbtasten: Rot = Live-TV, Grün = TV-Programm, Gelb = Apps, Blau = Einstellungen
-- Menü-Taste oder OK lange drücken: App verschieben, entfernen, beenden
+- Menü-Taste oder OK lange drücken: App verschieben, entfernen, beenden oder **neu starten** (wenn sie hängt)
+
+**Ton**
+- **Receiver-Erkennung** (Einstellungen → Bild & Ton): zeigt, welcher AV-Receiver/Fernseher angeschlossen ist und welche
+  Formate er kann (z. B. 7.1 PCM, Dolby Digital, DTS, Dolby TrueHD/Atmos, DTS-HD). „Passend zum Receiver einstellen“
+  setzt Lautsprecher und Durchreichen mit einem Klick. Kodi reicht nur Formate durch, die der Receiver wirklich kann.
+- Hinweis: Der Receiver zeigt als Quelle „Integrated Gfx“ – das ist nur der feste Name des Intel-Grafiktreibers.
+
+**Stabilität**
+- Kodi: großer Puffer für Streams, längere Netzwerk-Wartezeiten, Tonverbindung zum Receiver bleibt nach Pausen offen;
+  hängt Kodi 45 Sekunden, wird es neu gestartet – nach einem Absturz ebenso (Protokoll unter
+  `~/.cache/wangerttv/logs/kodi-crash-*.log`).
+- Updates: Die Oberfläche startet danach sauber neu; kommt sie nicht zurück, startet die Box selbst neu.
 
 **Komfort**
 - **Updater für alles** mit einem Klick: System, Kodi, Chrome, Spotify/Flatpak-Apps, Android und WangertTV selbst – optional automatisch nachts
@@ -130,7 +175,8 @@ Weitere PVR-Clients (Zattoo, TVHeadend, Enigma2/VU+, HDHomeRun, VDR, Octonet) si
 Add-ons → Meine Add-ons → PVR-Clients zu finden. (Unter Linux bietet das Kodi-Repository keine PVR-Clients an – sie kommen aus Debian.)
 
 **Play Store:** Einstellungen → Android & Play Store → einrichten (ca. 1 GB). Danach Geräte-ID abrufen und unter
-google.com/android/uncertified eintragen (QR-Code wird angezeigt).
+google.com/android/uncertified eintragen (QR-Code wird angezeigt). 10–30 Minuten warten, dann **„Android neu starten“**.
+Der erste Start von Android dauert bis zu 2 Minuten. Protokoll bei Problemen: `~tv/.cache/wangerttv/logs/android-launch.log`.
 
 **Eigene App-Symbole / Apps:** Bilder nach `/etc/wangerttv/icons/<app-id>.png` (quadratisch) oder `<app-id>-banner.png` (16:9).
 Eigene Apps als JSON nach `/etc/wangerttv/apps.d/` (Beispiel liegt dort).

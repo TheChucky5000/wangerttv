@@ -100,6 +100,10 @@ opus-tools
 
 # Medien: Kodi + IPTV, AirPlay, HDMI-CEC, Flatpak
 kodi
+openssh-server
+fonts-roboto-unhinted
+fonts-noto-core
+fonts-noto-mono
 kodi-pvr-iptvsimple
 # Weitere Live-TV-Quellen (PVR-Clients) – unter Linux nicht im Kodi-Repository, daher aus Debian
 kodi-pvr-waipu
