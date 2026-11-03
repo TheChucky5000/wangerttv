@@ -37,6 +37,17 @@ CONF
 
     install -d -m 0755 /var/lib/wangerttv /var/lib/wangerttv/update /etc/wangerttv/icons /etc/wangerttv/apps.d
 
+    # Spotify Connect (Raspotify-Paketquelle): nur anlegen, wenn nicht schon eine eigene Raspotify-Quelle
+    # eingerichtet ist (z. B. über das Raspotify-Installationsskript) – zwei Einträge mit verschiedenen
+    # Schlüsseldateien legen apt komplett lahm ("Conflicting values set for option Signed-By").
+    ours=/etc/apt/sources.list.d/wangerttv-raspotify.sources
+    others=$(grep -ls "dtcooper.github.io/raspotify" /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null | grep -v "^$ours\$" || true)
+    if [ -n "$others" ]; then
+        rm -f "$ours"
+    elif [ ! -e "$ours" ]; then
+        install -m 0644 /usr/lib/wangerttv/raspotify.sources "$ours"
+    fi
+
     # Tastenbelegung der Fernbedienungen (OK-Taste -> Enter) aktivieren
     if command -v systemd-hwdb >/dev/null 2>&1; then
         systemd-hwdb update || true
@@ -47,7 +58,26 @@ CONF
         # Android-Treiber für Waydroid sofort laden (danach automatisch bei jedem Start)
         modprobe binder_linux >/dev/null 2>&1 || true
     fi
+    # SSH bleibt aus, bis es am Fernseher eingeschaltet wird (der Benutzer tv hat sonst das bekannte Standardpasswort)
+    if ! grep -q '"enabled": true' /var/lib/wangerttv/ssh.json 2>/dev/null; then
+        systemctl disable ssh.service ssh.socket >/dev/null 2>&1 || true
+        if [ -d /run/systemd/system ]; then
+            systemctl stop ssh.service ssh.socket >/dev/null 2>&1 || true
+        fi
+    fi
     systemctl enable greetd.service wtv-guard.service wtv-remote.service wtv-update-check.timer wtv-autoupdate.timer >/dev/null 2>&1 || true
+    # SSD regelmäßig "trimmen" (hält sie schnell) – Debian liefert den Timer mit, schaltet ihn aber nicht immer ein
+    systemctl enable fstrim.timer >/dev/null 2>&1 || true
+    # System-Optimierungen sofort anwenden (zram, sysctl, Protokollgröße, WLAN-Energiesparen)
+    if [ -d /run/systemd/system ]; then
+        modprobe tcp_bbr >/dev/null 2>&1 || true
+        sysctl --system >/dev/null 2>&1 || true
+        systemctl try-restart systemd-journald.service >/dev/null 2>&1 || true
+        if [ -e /usr/lib/systemd/system-generators/zram-generator ] && ! grep -q zram /proc/swaps 2>/dev/null; then
+            systemctl start systemd-zram-setup@zram0.service dev-zram0.swap >/dev/null 2>&1 || true
+        fi
+        nmcli general reload conf >/dev/null 2>&1 || true
+    fi
     for dm in gdm3 sddm lightdm; do
         systemctl disable "$dm.service" >/dev/null 2>&1 || true
     done
@@ -55,17 +85,33 @@ CONF
     # Spotify Connect läuft in der TV-Sitzung (mit Ton über PipeWire), nicht als Systemdienst
     systemctl disable raspotify.service >/dev/null 2>&1 || true
 
-    # Bootanimation
+    # Bootanimation: Theme setzen; Initial-Ramdisk neu bauen, wenn sich Theme oder Startmodule geändert haben
+    # (die Animation läuft aus der Initial-Ramdisk – ohne Neubau bliebe die alte Version)
     if command -v plymouth-set-default-theme >/dev/null 2>&1; then
+        boot_sum="$(cat /usr/share/plymouth/themes/wangerttv/* /usr/share/initramfs-tools/modules.d/wangerttv 2>/dev/null | sha256sum | cut -d' ' -f1)"
+        old_sum="$(cat /var/lib/wangerttv/boot-theme.sum 2>/dev/null || true)"
         if [ "$(plymouth-set-default-theme 2>/dev/null)" != "wangerttv" ]; then
             plymouth-set-default-theme wangerttv || true
-            if command -v update-initramfs >/dev/null 2>&1 && [ ! -d /run/live/medium ]; then
-                update-initramfs -u || true
+            old_sum=""
+        fi
+        if [ "$boot_sum" != "$old_sum" ] && command -v update-initramfs >/dev/null 2>&1 && [ ! -d /run/live/medium ]; then
+            if update-initramfs -u; then
+                mkdir -p /var/lib/wangerttv && echo "$boot_sum" > /var/lib/wangerttv/boot-theme.sum
             fi
         fi
     fi
     if [ -f /boot/grub/grub.cfg ] && command -v update-grub >/dev/null 2>&1 && [ ! -d /run/live/medium ]; then
         update-grub >/dev/null 2>&1 || true
+    fi
+
+    # Neue Version sofort aktiv: Fernbedienungsdienst und Hintergrunddienst der Oberfläche neu starten
+    # (die Sitzung startet den Hintergrunddienst nach 2 s automatisch neu, die Oberfläche lädt sich dann neu)
+    if [ -d /run/systemd/system ]; then
+        systemctl try-restart wtv-remote.service >/dev/null 2>&1 || true
+        # Beim Update über WangertTV (wtv-update) startet am Ende die ganze Sitzung neu – hier dann nichts tun
+        if [ -z "${WTV_UPDATER:-}" ]; then
+            pkill -u tv -f "python3 -m wtv" >/dev/null 2>&1 || true
+        fi
     fi
 fi
 exit 0

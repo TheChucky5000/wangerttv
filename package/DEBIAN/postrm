@@ -1,6 +1,9 @@
 #!/bin/sh
 set -e
 if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    if [ "$1" = "purge" ]; then
+        rm -f /etc/apt/sources.list.d/wangerttv-raspotify.sources
+    fi
     if [ -f /etc/greetd/config.toml.wangerttv-orig ]; then
         mv -f /etc/greetd/config.toml.wangerttv-orig /etc/greetd/config.toml
     fi

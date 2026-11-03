@@ -2,3 +2,5 @@
 /etc/polkit-1/rules.d/50-wangerttv.rules
 /etc/systemd/logind.conf.d/wangerttv.conf
 /etc/default/grub.d/wangerttv.cfg
+/etc/ssh/sshd_config.d/wangerttv.conf
+/etc/grub.d/05_wangerttv
